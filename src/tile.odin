@@ -20,7 +20,7 @@ tile_chunk :: struct {
 }
 tile_entity_block :: struct {
 	Entity_Count: u32,
-	Entity:       [16]dormant_entity,
+	Entity_Index: [16]dormant_entity,
 	Next:         ^tile_entity_block,
 }
 

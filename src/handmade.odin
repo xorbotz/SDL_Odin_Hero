@@ -8,6 +8,8 @@ import "core:os"
 
 import "core:mem"
 
+TURNOFF :: #config(TURNOFF, false)
+
 debug_mode: bool = true
 Game_Mem: ^game_memory
 GameState: ^game_state
@@ -156,7 +158,7 @@ dormant_entity :: struct {
 addEntity :: proc(E: entity) {
 	assert(GameState.entityCount < len(GameState.entity_residence) - 1)
 	GameState.entity_residence[GameState.entityCount] = E.residence
-	GameState.high_entities[GameState.entityCount] = E.high
+	GameState.high_entities[GameState.entityCount] = E.high^
 	GameState.entityCount += 1
 
 }
@@ -307,11 +309,12 @@ Alloc_Chunk :: proc() -> ^Map {
 	return mapn
 
 }
-Get_Tile_Value :: proc(world: ^World, chunk_p: ^tile_chunk) -> u32 {
+when (TURNOFF) {
+	Get_Tile_Value :: proc(world: ^World, chunk_p: ^tile_chunk) -> u32 {
 
-	map1 := Get_Chunk(world.tile_m, chunk_p.ChunkX, chunk_p.ChunkY, chunk_p.ChunkZ, true) //world.chunks[chunk_p.ChunkY * world.ChunkX + chunk_p.ChunkX]
-	return map1.Tiles[chunk_p.TileY * world.ChunkDim + chunk_p.TileX]
-}
+		map1 := Get_Chunk(world.tile_m, chunk_p.ChunkX, chunk_p.ChunkY, chunk_p.ChunkZ, true) //world.chunks[chunk_p.ChunkY * world.ChunkX + chunk_p.ChunkX]
+		return map1.Tiles[chunk_p.TileY * world.ChunkDim + chunk_p.TileX]
+	}}
 To_Chunk_Pos :: #force_inline proc(
 	Player_Position: ^global_position,
 	world: ^World,
@@ -382,20 +385,20 @@ Recon_Position :: #force_inline proc(Player_Position: ^global_position, world: ^
 }
 
 game_state :: struct {
-	world:                      ^World,
-	arena:                      mem_arena,
-	Player_Position:            global_position,
-	backGroundData:             []u8,
-	backGroundBmap:             ^bmp,
-	playerBmap:                 ^bmp,
-	playerData:                 []u8,
-	count:                      u64,
-	Speed:                      uint,
-	dPlayer:                    Vector2, //TODO MOVE TO hf_entity
-	entityCount:                u64,
-	entity_residence:           [256]entity_res,
-	high_entities:              [256]hf_entity,
-	dormant_entities_reference: [10000]dormant_entity_chunk_ref,
+	world:            ^World,
+	arena:            mem_arena,
+	Player_Position:  global_position,
+	backGroundData:   []u8,
+	backGroundBmap:   ^bmp,
+	playerBmap:       ^bmp,
+	playerData:       []u8,
+	count:            u64,
+	Speed:            uint,
+	dPlayer:          Vector2, //TODO MOVE TO hf_entity
+	entityCount:      u64,
+	entity_residence: [256]entity_res,
+	high_entities:    [256]hf_entity,
+	dormant_entities: [10000]dormant_entity,
 }
 World :: struct {
 	chunks:          [^](^Map),
@@ -1205,9 +1208,11 @@ game_GameUpdateAndRender :: proc(
 			}
 
 
-			Tileid := Get_Tile_Value(world, &current_chunk_pos) //tile_map[world.currenty][world.currentx].Tilemap[i * mapcountx + j]
+			when (TURNOFF) {
+				Tileid := Get_Tile_Value(world, &current_chunk_pos) //tile_map[world.currenty][world.currentx].Tilemap[i * mapcountx + j]
+			}
 
-
+			Tileid := 0
 			if Tileid == 1 {
 				color = 1.0
 				minX := f32(j) * world.TileSidePixels + world.Upperleftstartx

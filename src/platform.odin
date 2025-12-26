@@ -81,7 +81,7 @@ load_game_api :: proc(api_version: int) -> (GameAPI, bool) {
 		return {}, false
 	}
 
-	dll_name := "game.dll" //fmt.tprintf("game_{0}.dll", api_version)
+	dll_name := "/home/xorbot/CLionProjects/SDL_Odin_Hero/game.dll" //fmt.tprintf("game_{0}.dll", api_version)
 	copy_cmd := fmt.ctprintf("copy game.dll {0}", dll_name)
 	/*if libc.system(copy_cmd) != 0 {
 		fmt.println("FAILED TO COPY game.dll to {0}", dll_name)
@@ -383,7 +383,7 @@ main :: proc() {
 	colorcount: ^int = new(int)
 	colorcount^ = 0
 
-	sdl_ok := sdl.Init({.VIDEO})//, .GAMEPAD,.JOYSTICK})
+	sdl_ok := sdl.Init({.VIDEO}) //, .GAMEPAD,.JOYSTICK})
 	defer sdl.Quit()
 
 	if !sdl_ok {
