@@ -499,12 +499,12 @@ DrawRect :: proc(
 
 	if minX < 0 {
 		minX = 0
-	};if minY < 0 {
+	}; if minY < 0 {
 		maxY = maxY + minY
 		minY = 0
-	};if maxX > Buffer.Width {
+	}; if maxX > Buffer.Width {
 		maxX = Buffer.Width
-	};if maxY > Buffer.Height {
+	}; if maxY > Buffer.Height {
 		maxY = Buffer.Height
 	}
 
