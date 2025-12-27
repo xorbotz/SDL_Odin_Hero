@@ -9,6 +9,7 @@ import "core:os"
 import "core:mem"
 
 TURNOFF :: #config(TURNOFF, false)
+DEBUG :: #config(DEBUG, false)
 
 debug_mode: bool = true
 Game_Mem: ^game_memory
@@ -149,18 +150,32 @@ dormant_entity :: struct {
 }
 
 
-/*getEntity :: proc(state: entity_res,index: i32) -> (^dormant_entity, ^lf_entity, ^hf_entity) {
-	return &GameState.dormant_entities[index],
-		&GameState.low_entities[index],
-		&GameState.high_entities[index]
-}*/
+getEntity :: proc(GameState: ^game_state, index: u32) -> entity {
+	e: entity
+	e.dormant = &GameState.dormant_entities[index]
+	e.high = &GameState.high_entities[index] //nil
+	return e
+}
+addWall :: proc(GameState: ^game_state, AbsTileX, AbsTileY, AbsTileZ: u32) -> u32 {
+	EI := addEntity(GameState)
+	GameState.dormant_entities[EI].position.AbsTileX = AbsTileX
+	GameState.dormant_entities[EI].position.AbsTileY = AbsTileY
+	GameState.dormant_entities[EI].position.AbsTileZ = AbsTileZ
+	GameState.dormant_entities[EI].height = world.TileSideM
+	GameState.dormant_entities[EI].width = GameState.dormant_entities[EI].height
+	GameState.dormant_entities[EI].collides = true
+	return EI
 
-addEntity :: proc(E: entity) {
+
+}
+addEntity :: proc(GameState: ^game_state) -> u32 {
 	assert(GameState.entityCount < len(GameState.entity_residence) - 1)
-	GameState.entity_residence[GameState.entityCount] = E.residence
-	GameState.high_entities[GameState.entityCount] = E.high^
+	eC := GameState.entityCount
+	GameState.entity_residence[GameState.entityCount] = .DORMANT
+	GameState.high_entities[GameState.entityCount] = {}
+	GameState.dormant_entities[GameState.entityCount] = {}
 	GameState.entityCount += 1
-
+	return eC
 }
 
 
@@ -237,11 +252,33 @@ Alloc_Chunk_C :: proc(ChunkX, ChunkY, ChunkZ: u32) -> ^tile_chunk {
 			} else if j == 0 || j == 31 {
 
 				mappoint^[i][j] = 1
+
+				addWall(
+					GameState,
+					ChunkX * world.ChunkDim + u32(j),
+					ChunkY * world.ChunkDim + u32(i),
+					0,
+				)
+
 			} else if i % 3 == 0 && j % 5 == 0 {
 
 				mappoint^[i][j] = 1
+
+				addWall(
+					GameState,
+					ChunkX * world.ChunkDim + u32(j),
+					ChunkY * world.ChunkDim + u32(i),
+					0,
+				)
 			} else if (i == 3 && j == 6) || (i == 3 && j == 7) {
 				mappoint^[i][j] = 1
+
+				addWall(
+					GameState,
+					ChunkX * world.ChunkDim + u32(j),
+					ChunkY * world.ChunkDim + u32(i),
+					0,
+				)
 
 			} else {
 				mappoint^[i][j] = 0
@@ -395,7 +432,7 @@ game_state :: struct {
 	count:            u64,
 	Speed:            uint,
 	dPlayer:          Vector2, //TODO MOVE TO hf_entity
-	entityCount:      u64,
+	entityCount:      u32,
 	entity_residence: [256]entity_res,
 	high_entities:    [256]hf_entity,
 	dormant_entities: [10000]dormant_entity,
@@ -752,12 +789,11 @@ HandleInput :: proc(
 	Width: i32,
 	dtForFrame: f32,
 	world: ^World,
-	entIndex: i32,
+	entIndex: u32,
 ) {
-	oldPlayerP := GameState.dormant_entities[entIndex].position //GameState.Player_Position
+	Entity := getEntity(GameState, entIndex)
+	oldPlayerP := Entity.dormant.position //GameState.Player_Position
 	if Input1.isConnected {
-
-
 		if (Input1.IsAnalgo) {
 		} else {
 		}
@@ -773,9 +809,9 @@ HandleInput :: proc(
 			}
 			if buttons.Left.EndedDown {
 				ddPlayer.x = -1.0
-				GameState.high_entities[entIndex].Left = true
-				GameState.high_entities[entIndex].Right = false
-				GameState.high_entities[entIndex].moving = true
+				Entity.high.Left = true
+				Entity.high.Right = false
+				Entity.high.moving = true
 
 			} else {
 
@@ -788,10 +824,10 @@ HandleInput :: proc(
 			if buttons.Right.EndedDown {
 
 				ddPlayer.x = 1.0
-				GameState.high_entities[entIndex].Right = true
-				GameState.high_entities[entIndex].Left = false
+				Entity.high.Right = true
+				Entity.high.Left = false
 
-				GameState.high_entities[entIndex].moving = true
+				Entity.high.moving = true
 
 			} else {
 
@@ -801,7 +837,7 @@ HandleInput :: proc(
 				ddPlayer *= .70710678118
 			}
 			if !(buttons.Right.EndedDown || buttons.Left.EndedDown) {
-				GameState.high_entities[entIndex].moving = false
+				Entity.high.moving = false
 			}
 			if buttons.Action1.EndedDown {
 				fmt.println("Speed")
@@ -836,135 +872,143 @@ HandleInput :: proc(
 
 		ddPlayer += -10 * GameState.dPlayer
 
-		PlayerDelta :=
-			dtForFrame * GameState.high_entities[entIndex].dPos +
-			.5 * ddPlayer * dtForFrame * dtForFrame
-		NewPlayer := GameState.dormant_entities[entIndex].position.TileOffSet + PlayerDelta
+		PlayerDelta := dtForFrame * Entity.high.dPos + .5 * ddPlayer * dtForFrame * dtForFrame
+		NewPlayer := Entity.dormant.position.TileOffSet + PlayerDelta
 
-		GameState.high_entities[entIndex].dPos = ddPlayer * dtForFrame + GameState.dPlayer
+		Entity.high.dPos = ddPlayer * dtForFrame + GameState.dPlayer
 
-		P1 := GameState.dormant_entities[entIndex].position //GameState.Player_Position
+		P1 := Entity.dormant.position //GameState.Player_Position
 		P1.TileOffSet.x = NewPlayer.x
 		P1.TileOffSet.y = NewPlayer.y
 		Recon_Position(&P1, world)
 
-
-		minSearchY: u32 = Min(P1.AbsTileY, GameState.dormant_entities[entIndex].position.AbsTileY)
-		minSearchX: u32 = Min(P1.AbsTileX, GameState.dormant_entities[entIndex].position.AbsTileX)
-		maxSearchY: u32 = Max(P1.AbsTileY, GameState.dormant_entities[entIndex].position.AbsTileY)
-		maxSearchX: u32 = Max(P1.AbsTileX, GameState.dormant_entities[entIndex].position.AbsTileX)
-		tLowest: f32 = 1
-
-		WidthTile: u32 = u32(math.ceil(world.PlayerW / world.TileSideM))
-		HeightTile: u32 = u32(math.ceil(world.PlayerH / world.TileSideM))
-		if minSearchX > 0 {
-			minSearchX -= WidthTile
-
-		}
-		maxSearchX += WidthTile
-
-		maxSearchY += HeightTile
-
-
-		r: Vector2 = {0, 0}
-
-		for minY: u32 = minSearchY; minY <= maxSearchY; minY += 1 {
-			for minX: u32 = minSearchX; minX <= maxSearchX; minX += 1 {
-				TestP: global_position
-				TestP.AbsTileX = minX
-				TestP.AbsTileY = minY
-				TestP.TileOffSet = {0, 0}
-
-				if !IsWorldMapPointEmpty(world.tile_m, world, &TestP) {
-					//					fmt.println("Testing: ", TestP.AbsTileX, TestP.AbsTileY)
-
-					Diam: Vector2
-					Diam.x = GameState.high_entities[entIndex].width //world.PlayerW
-					Diam.y = GameState.high_entities[entIndex].height //world.PlayerW//world.PlayerH
-					minCorner: Vector2 = Vector2{-.5 * Diam.x, -1 * world.TileSideM}
-					maxCorner: Vector2 = 1 * Vector2 {
-								world.TileSideM + .5 * Diam.x,
-								world.TileSideM - world.oneMinPH * world.TileSideM, //(.75 * world.TileSideM),
-							} // + Diam
-					dist := SubTile(&TestP, &oldPlayerP)
-
-					//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
-
-					if (math.sign(dist.x) != math.sign(PlayerDelta.x) &&
-						   math.abs(PlayerDelta.x) > 0) {
-						if TestWall(
-							minCorner.x, // - .5 * world.PlayerW,
-							dist.x,
-							dist.y,
-							PlayerDelta.x,
-							PlayerDelta.y,
-							&tLowest,
-							minCorner.y, // - Diam.y,
-							maxCorner.y,
-						) {
-							r.x = 1
-							r.y = 0
-						}
-
-					}
-					if (math.sign(dist.x) != math.sign(PlayerDelta.x) &&
-						   math.abs(PlayerDelta.x) > 0) {
-						if TestWall(
-							maxCorner.x, // + .5 * world.PlayerW,
-							dist.x,
-							dist.y,
-							PlayerDelta.x,
-							PlayerDelta.y,
-							&tLowest,
-							minCorner.y, // - Diam.y,
-							maxCorner.y,
-						) {
-							r.x = -1
-							r.y = 0
-
-						}
-					}
-
-					if (math.sign(dist.y) != math.sign(PlayerDelta.y) &&
-						   math.abs(PlayerDelta.y) > 0) {
-						if TestWall(
-							minCorner.y, // + world.PlayerH, //- world.PlayerH,
-							dist.y,
-							dist.x,
-							PlayerDelta.y,
-							PlayerDelta.x,
-							&tLowest,
-							minCorner.x, //- .5 * world.PlayerW,
-							maxCorner.x, //+ .5 * world.PlayerW,
-						) {
-							r.y = 1
-							r.x = 0
-						}
-					}
-
-					if (math.sign(dist.y) != math.sign(PlayerDelta.y) &&
-						   math.abs(PlayerDelta.y) > 0) {
-						if TestWall(
-							maxCorner.y, // - world.PlayerH,
-							dist.y,
-							dist.x,
-							PlayerDelta.y,
-							PlayerDelta.x,
-							&tLowest,
-							minCorner.x, // - .5 * Diam.x,
-							maxCorner.x, //+ .5 * Diam.y,
-						) {
-							r.y = -1
-							r.x = 0
-							fmt.println("Max Y")
-						}
-					}
+		when (TURNOFF) {
+			minSearchY: u32 = Min(
+				P1.AbsTileY,
+				GameState.dormant_entities[entIndex].position.AbsTileY,
+			)
+			minSearchX: u32 = Min(
+				P1.AbsTileX,
+				GameState.dormant_entities[entIndex].position.AbsTileX,
+			)
+			maxSearchY: u32 = Max(
+				P1.AbsTileY,
+				GameState.dormant_entities[entIndex].position.AbsTileY,
+			)
+			maxSearchX: u32 = Max(
+				P1.AbsTileX,
+				GameState.dormant_entities[entIndex].position.AbsTileX,
+			)
 
 
-				}
-
+			WidthTile: u32 = u32(math.ceil(world.PlayerW / world.TileSideM))
+			HeightTile: u32 = u32(math.ceil(world.PlayerH / world.TileSideM))
+			if minSearchX > 0 {
+				minSearchX -= WidthTile
 
 			}
+			maxSearchX += WidthTile
+
+			maxSearchY += HeightTile
+		}
+
+
+		tLowest: f32 = 1
+		r: Vector2 = {0, 0}
+
+		for Eindex: u32 = 0; Eindex <= GameState.entityCount; Eindex += 1 {
+			/*for minY: u32 = minSearchY; minY <= maxSearchY; minY += 1 {
+			//for minX: u32 = minSearchX; minX <= maxSearchX; minX += 1 {
+			TestP: global_position
+			TestP.AbsTileX = minX
+			TestP.AbsTileY = minY
+			TestP.TileOffSet = {0, 0}*/
+			if Eindex == entIndex {
+				continue
+			}
+			TestEntity := getEntity(GameState, Eindex)
+
+
+			Diam: Vector2
+			Diam.x = TestEntity.dormant.width + Entity.dormant.width
+			Diam.y = TestEntity.dormant.height + Entity.dormant.height
+			minCorner: Vector2 = Vector2{-.5 * Diam.x, -1 * TestEntity.dormant.height}
+			maxCorner: Vector2 = 1 * Vector2 {
+						TestEntity.dormant.width + .5 * Diam.x,
+						TestEntity.dormant.height - world.oneMinPH * TestEntity.dormant.height, //(.75 * world.TileSideM),
+					} // + Diam
+			dist := SubTile(&TestEntity.dormant.position, &oldPlayerP)
+
+			//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
+
+			if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
+				if TestWall(
+					minCorner.x, // - .5 * world.PlayerW,
+					dist.x,
+					dist.y,
+					PlayerDelta.x,
+					PlayerDelta.y,
+					&tLowest,
+					minCorner.y, // - Diam.y,
+					maxCorner.y,
+				) {
+					r.x = 1
+					r.y = 0
+				}
+
+			}
+			if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
+				if TestWall(
+					maxCorner.x, // + .5 * world.PlayerW,
+					dist.x,
+					dist.y,
+					PlayerDelta.x,
+					PlayerDelta.y,
+					&tLowest,
+					minCorner.y, // - Diam.y,
+					maxCorner.y,
+				) {
+					r.x = -1
+					r.y = 0
+
+				}
+			}
+
+			if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
+				if TestWall(
+					minCorner.y, // + world.PlayerH, //- world.PlayerH,
+					dist.y,
+					dist.x,
+					PlayerDelta.y,
+					PlayerDelta.x,
+					&tLowest,
+					minCorner.x, //- .5 * world.PlayerW,
+					maxCorner.x, //+ .5 * world.PlayerW,
+				) {
+					r.y = 1
+					r.x = 0
+				}
+			}
+
+			if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
+				if TestWall(
+					maxCorner.y, // - world.PlayerH,
+					dist.y,
+					dist.x,
+					PlayerDelta.y,
+					PlayerDelta.x,
+					&tLowest,
+					minCorner.x, // - .5 * Diam.x,
+					maxCorner.x, //+ .5 * Diam.y,
+				) {
+					r.y = -1
+					r.x = 0
+					fmt.println("Max Y")
+				}
+			}
+
+
+			//}
 		}
 		if tLowest != 1 {
 
@@ -1077,7 +1121,7 @@ game_GameUpdateAndRender :: proc(
 	//TODO Possibly implement the game to be told where in time to put sound
 	Input0: ^game_controller_input = &Input.Controllers[0]
 	Input1: ^game_controller_input = &Input.Controllers[1]
-	file_name := "/Users/jcoyne/CLionProjects/SDL3_Odin/src/forest.bmp"
+	file_name := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/forest.bmp"
 	//file_name := "src/lol.txt"
 	file_name_w := "src/test1.txt"
 
@@ -1115,22 +1159,26 @@ game_GameUpdateAndRender :: proc(
 		E: entity
 		E.residence = .HIGH
 
-		/*
+
+		addEntity(GameState)
 		GameState.entity_residence[0] = .HIGH
 		GameState.dormant_entities[0].position.AbsTileX = 166
 		GameState.dormant_entities[0].position.AbsTileY = 36
 		GameState.high_entities[0].width = .75 * world.TileSideM
-		GameState.high_entities[0].height = .33 * world.TileSideM*/
+		GameState.high_entities[0].height = .33 * world.TileSideM
+
+		when (TURNOFF) {
 
 
-		E.dormant.position.AbsTileX = 166
-		E.dormant.position.AbsTileY = 36
-		E.dormant.type = .HERO
-		E.dormant.collides = true
-		E.high.width = .75 * world.TileSideM
-		E.high.height = .33 * world.TileSideM
-		addEntity(E)
-
+			E.dormant.position.AbsTileX = 166
+			E.dormant.position.AbsTileY = 36
+			E.dormant.type = .HERO
+			E.dormant.collides = true
+			E.high.width = .75 * world.TileSideM
+			E.high.height = .33 * world.TileSideM
+			addEntity(E)
+		}
+		fmt.println("Initting Mem!")
 
 		world.LowerLeftStartY = f32(windowSizey) * world.TileSidePixels
 		world.Window_Pos.AbsTileY = 32
@@ -1154,7 +1202,7 @@ game_GameUpdateAndRender :: proc(
 		GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
 
 
-		file_name = "/Users/jcoyne/CLionProjects/SDL3_Odin/src/run.bmp"
+		file_name = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
 		GameState.playerData, GameState.playerBmap = loadBMP(file_name)
 		fmt.println(
 			"bgdata size: ",
@@ -1166,20 +1214,20 @@ game_GameUpdateAndRender :: proc(
 
 	}
 
+	when (TURNOFF) {
+		for &controller in Input.Controllers {
+			HandleInput(
+				GameState,
+				&controller,
+				Buffer.Height,
+				Buffer.Width,
+				Input.dtForFrame,
+				world,
+				0,
+			)
+		}
 
-	for &controller in Input.Controllers {
-		HandleInput(
-			GameState,
-			&controller,
-			Buffer.Height,
-			Buffer.Width,
-			Input.dtForFrame,
-			world,
-			0,
-		)
 	}
-
-
 	//DrawRect(Buffer, 0, 0, f32(Buffer.Width), f32(Buffer.Height), 0, 0, 0)
 
 
@@ -1191,42 +1239,67 @@ game_GameUpdateAndRender :: proc(
 	Temp_Pos := world.Window_Pos
 	tt := To_Chunk_Pos(&Temp_Pos, world)
 	//	fmt.println("Current Chunk: ", tt.ChunkX, tt.ChunkY)
-	for i: u32 = 0; i < windowSizey; i += 1 {
-
-		for j: u32 = 0; j < windowSizex; j += 1 {
+	for eindex: u32 = 0; eindex <= GameState.entityCount; eindex += 1 {
+		ent := getEntity(GameState, eindex)
+		if ent.dormant.position.AbsTileX >= Temp_Pos.AbsTileX &&
+		   ent.dormant.position.AbsTileY >= Temp_Pos.AbsTileY &&
+		   ent.dormant.position.AbsTileX < Temp_Pos.AbsTileX + windowSizex &&
+		   ent.dormant.position.AbsTileY <= Temp_Pos.AbsTileY + windowSizey {
 			color: f32 = 1.0
-			Temp_Pos.AbsTileX = world.Window_Pos.AbsTileX + j
-			Temp_Pos.AbsTileY = world.Window_Pos.AbsTileY + i
+			minX :=
+				f32(ent.dormant.position.AbsTileX - Temp_Pos.AbsTileX) * world.TileSidePixels +
+				world.Upperleftstartx
+			minY :=
+				world.LowerLeftStartY -
+				f32(ent.dormant.position.AbsTileY - Temp_Pos.AbsTileY + 1) * world.TileSidePixels +
+				world.Upperleftstarty
 
-			//			fmt.println("Temp Ps: ", Temp_Pos.AbsTileX, Temp_Pos.AbsTileY)
-			current_chunk_pos := To_Chunk_Pos(&Temp_Pos, world)
+			maxX := minX + world.TileSidePixels
+			maxY := minY + world.TileSidePixels
 
-			if Temp_Pos.AbsTileY == GameState.Player_Position.AbsTileY &&
-			   Temp_Pos.AbsTileX == GameState.Player_Position.AbsTileX {
-				//fmt.println("h Player")
-				color = 0
-			}
+			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
 
+		}
 
-			when (TURNOFF) {
-				Tileid := Get_Tile_Value(world, &current_chunk_pos) //tile_map[world.currenty][world.currentx].Tilemap[i * mapcountx + j]
-			}
+	}
+	when (TURNOFF) {
+		for i: u32 = 0; i < windowSizey; i += 1 {
 
-			Tileid := 0
-			if Tileid == 1 {
-				color = 1.0
-				minX := f32(j) * world.TileSidePixels + world.Upperleftstartx
-				minY :=
-					world.LowerLeftStartY -
-					f32(i + 1) * world.TileSidePixels +
-					world.Upperleftstarty
+			for j: u32 = 0; j < windowSizex; j += 1 {
+				color: f32 = 1.0
+				Temp_Pos.AbsTileX = world.Window_Pos.AbsTileX + j
+				Temp_Pos.AbsTileY = world.Window_Pos.AbsTileY + i
 
-				maxX := minX + world.TileSidePixels
-				maxY := minY + world.TileSidePixels
+				//			fmt.println("Temp Ps: ", Temp_Pos.AbsTileX, Temp_Pos.AbsTileY)
+				current_chunk_pos := To_Chunk_Pos(&Temp_Pos, world)
 
-				DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
+				if Temp_Pos.AbsTileY == GameState.Player_Position.AbsTileY &&
+				   Temp_Pos.AbsTileX == GameState.Player_Position.AbsTileX {
+					//fmt.println("h Player")
+					color = 0
+				}
 
 
+				when (TURNOFF) {
+					Tileid := Get_Tile_Value(world, &current_chunk_pos) //tile_map[world.currenty][world.currentx].Tilemap[i * mapcountx + j]
+				}
+
+				Tileid := 0
+				if Tileid == 1 {
+					color = 1.0
+					minX := f32(j) * world.TileSidePixels + world.Upperleftstartx
+					minY :=
+						world.LowerLeftStartY -
+						f32(i + 1) * world.TileSidePixels +
+						world.Upperleftstarty
+
+					maxX := minX + world.TileSidePixels
+					maxY := minY + world.TileSidePixels
+
+					DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
+
+
+				}
 			}
 		}
 	}
