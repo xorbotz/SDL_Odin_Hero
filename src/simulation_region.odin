@@ -4,6 +4,7 @@ package main
 import "core:fmt"
 import "core:math"
 
+
 import "core:mem"
 
 sim_region :: struct {

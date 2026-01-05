@@ -26,6 +26,7 @@ ChangeEntityLocation :: #force_inline proc(
 	LowEntityIndex: u32,
 	OldP, NewP: ^world_chunk_position,
 ) {
+	//fmt.print("justcommit")
 	if OldP != nil && AreInSameChunk(OldP, NewP) {
 		GameState.low_entities[LowEntityIndex].chunk_position.Offset = NewP.Offset
 
