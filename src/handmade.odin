@@ -1315,6 +1315,7 @@ game_GameUpdateAndRender :: proc(
 	ScreenCenterY := .5 * f32(Buffer.Height)
 
 	CameraB := RectCenterDim({0, 0}, {MSpanX, MSpanY})
+	//fmt.print("change for push")
 	SimRegion := BeginSim(
 		&GameState.sim_alloc,
 		GameState.world,
