@@ -33,6 +33,7 @@ MapIntoChunkSpace :: proc(
 	result.ChunkX = curChunk.ChunkX + i32(final.x)
 	result.ChunkY = curChunk.ChunkY + i32(final.y)
 	result.ChunkZ = 0
+	result.Offset = (curChunk.Offset + Delta - final * world.ChunkSideM)
 	return result
 
 }
@@ -178,6 +179,7 @@ EndSim :: proc(SimAlloc: ^mem.Allocator, region: ^sim_region, game_s: ^game_stat
 		NewP :=
 			MapIntoChunkSpace(region.world, region.Center, curEntity.Pos) if .NONSPATIAL not_in curEntity.attributes else null_pos()
 		ChangeEntityLocation(
+			GameState,
 			region.world,
 			curEntity.StorageIndex,
 			&storedEnt.chunk_position,

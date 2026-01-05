@@ -21,11 +21,14 @@ windowSizex: u32 : 17
 //TODO Move to math file
 
 ChangeEntityLocation :: #force_inline proc(
+	GameState: ^game_state,
 	world: ^World,
 	LowEntityIndex: u32,
 	OldP, NewP: ^world_chunk_position,
 ) {
 	if OldP != nil && AreInSameChunk(OldP, NewP) {
+		GameState.low_entities[LowEntityIndex].chunk_position.Offset = NewP.Offset
+
 	} else {
 		if (OldP != nil) {
 			curChunk: ^world_chunk = Get_Chunk(
@@ -262,7 +265,13 @@ addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: 
 	GameState.low_entities[EI].Stored.height = GameState.world.TileSideM
 	GameState.low_entities[EI].Stored.width = GameState.low_entities[EI].Stored.height
 	GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
-	ChangeEntityLocation(GameState.world, EI, nil, &GameState.low_entities[EI].chunk_position)
+	ChangeEntityLocation(
+		GameState,
+		GameState.world,
+		EI,
+		nil,
+		&GameState.low_entities[EI].chunk_position,
+	)
 	return EI
 
 
@@ -1202,7 +1211,14 @@ game_GameUpdateAndRender :: proc(
 
 		GameState.low_entities[EI].Stored.width = .75 * GameState.world.TileSideM
 		GameState.low_entities[EI].Stored.height = .33 * GameState.world.TileSideM
-		ChangeEntityLocation(GameState.world, 0, nil, &GameState.low_entities[EI].chunk_position)
+		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+		ChangeEntityLocation(
+			GameState,
+			GameState.world,
+			0,
+			nil,
+			&GameState.low_entities[EI].chunk_position,
+		)
 		addWall(GameState, 5, 1, 0, 12, 15)
 		addWall(GameState, 5, 1, 0, 12, 16)
 		addWall(GameState, 5, 1, 0, 13, 15)
@@ -1349,7 +1365,7 @@ game_GameUpdateAndRender :: proc(
 
 
 			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-		} if ent.type == .HERO  || ent.type!= .HERO{
+		}; if ent.type == .HERO || ent.type != .HERO {
 			ddP: Vector2
 
 			for controller in GameState.controllers {
