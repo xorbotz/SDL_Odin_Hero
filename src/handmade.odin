@@ -626,10 +626,11 @@ DrawRect :: proc(
 	Blue := math.round_f32(255 * B)
 	Green := math.round_f32(255 * G)
 	Red := math.round_f32(255 * R)
-	final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 8 | cast(u32)Blue
+	//final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 8 | cast(u32)Blue
+	final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 16 | cast(u32)Blue << 0 | 0xff << 24
 
 
-	Color: u32 = 0xffff00ff
+	Color: u32 = 0xffff0000
 
 	Rowz: [^]u8 = cast([^]u8)Buffer.memory
 	Pitch := Buffer.Pitch
@@ -1322,12 +1323,23 @@ game_GameUpdateAndRender :: proc(
 	)
 
 	//TODO FIX
-	RenderBckgrnd(
+	/*RenderBckgrnd(
 		GameState.backGroundBmap,
 		GameState.backGroundData,
 		Buffer,
 		GameState.world,
 		GameState,
+	)*/
+
+	DrawRect(
+		Buffer,
+		0,
+		0,
+		90 * GameState.world.TileSideM * GameState.world.MetersToPixels,
+		17 * 17 * GameState.world.TileSideM * GameState.world.MetersToPixels,
+		0,
+		0,
+		0,
 	)
 	when (TURNOFF) {
 		Temp_Pos := GameState.world.Window_Pos
@@ -1361,12 +1373,13 @@ game_GameUpdateAndRender :: proc(
 			minX := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
 			minY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
 
-			maxX := minX + GameState.world.MetersToPixels
-			maxY := minY + GameState.world.MetersToPixels
+			maxX := minX + ent.width * GameState.world.MetersToPixels
+			maxY := minY + ent.height * GameState.world.MetersToPixels
 
 
 			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-		}; if ent.type == .HERO || ent.type != .HERO {
+		}
+		if ent.type == .HERO {
 			ddP: Vector2
 
 			for controller in GameState.controllers {
@@ -1441,7 +1454,7 @@ game_GameUpdateAndRender :: proc(
 	}
 
 	EndSim(&GameState.sim_alloc, SimRegion, GameState)
-	GameState.world.camera_pos = GameState.low_entities[0].chunk_position
+	//GameState.world.camera_pos = GameState.low_entities[0].chunk_position
 
 
 	return true
