@@ -1370,12 +1370,14 @@ game_GameUpdateAndRender :: proc(
 				f32(curEnt.Stored.position.AbsTileY - Temp_Pos.AbsTileY + 1) *
 					GameState.world.TileSidePixels +
 				GameState.world.Upperleftstarty*/
-			minX := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
-			minY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
-
+			minX :=
+				GameState.world.LowerLeftStartX +
+				ScreenCenterX +
+				ent.Pos.x * GameState.world.MetersToPixels
 			maxX := minX + ent.width * GameState.world.MetersToPixels
-			maxY := minY + ent.height * GameState.world.MetersToPixels
+			maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
 
+			minY := maxY - ent.height * GameState.world.MetersToPixels
 
 			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
 		}
@@ -1423,9 +1425,9 @@ game_GameUpdateAndRender :: proc(
 			DrawRect(
 				Buffer,
 				PlayerL,
-				PlayerT,
+				PlayerT - ent.height * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
 				PlayerL + PlayerW * GameState.world.MetersToPixels,
-				PlayerT + GameState.world.TileSideM * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
+				ScreenCenterY,
 				PlayerR,
 				PlayerG,
 				PlayerB,
