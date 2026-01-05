@@ -67,28 +67,35 @@ ChangeEntityLocation :: #force_inline proc(
 		}
 
 
-		curChunk: ^world_chunk = Get_Chunk(
-			world,
-			u32(NewP.ChunkX),
-			u32(NewP.ChunkY),
-			u32(NewP.ChunkZ),
-			true,
-		)
-		Block: ^world_entity_block = &curChunk.First_BLock_Entities
-		if Block.Entity_Count == len(Block.Entity_Index) {
-			OldBlock := world.FirstFree
-			if OldBlock != nil {
-				world.FirstFree = OldBlock.Next
-			} else {
-				OldBlock = new(world_entity_block, GameMemory.PermanentStorageAlloc)
-			}
-			OldBlock^ = Block^
-			Block.Next = OldBlock
-			Block.Entity_Count = 0
+		if (NewP != nil) {
+			curChunk: ^world_chunk = Get_Chunk(
+				world,
+				u32(NewP.ChunkX),
+				u32(NewP.ChunkY),
+				u32(NewP.ChunkZ),
+				true,
+			)
+			Block: ^world_entity_block = &curChunk.First_BLock_Entities
+			if Block.Entity_Count == len(Block.Entity_Index) {
+				OldBlock := world.FirstFree
+				if OldBlock != nil {
+					world.FirstFree = OldBlock.Next
+				} else {
+					OldBlock = new(world_entity_block, GameMemory.PermanentStorageAlloc)
+				}
+				OldBlock^ = Block^
+				Block.Next = OldBlock
+				Block.Entity_Count = 0
 
+			}
+			Block.Entity_Index[Block.Entity_Count] = LowEntityIndex
+			Block.Entity_Count += 1
+
+			GameState.low_entities[LowEntityIndex].Stored.attributes -= {.NONSPATIAL}
+		} else {
+
+			GameState.low_entities[LowEntityIndex].Stored.attributes += {.NONSPATIAL}
 		}
-		Block.Entity_Index[Block.Entity_Count] = LowEntityIndex
-		Block.Entity_Count += 1
 
 	}
 }
@@ -200,7 +207,7 @@ entity_type :: enum {
 	NULL,
 	HERO,
 	WALL,
-	ENEMY,
+	MONSTER,
 	PROJECTILE,
 }
 direction :: enum {
@@ -229,16 +236,10 @@ low_entity_chunk_ref :: struct {
 	TileChunk:    ^world_chunk,
 	IndexInChunk: u32,
 }
+//TODO currently i have some silly casey code that has invalid positions and a flag and that seems redundant
 low_entity :: struct {
-	type:           entity_type,
-	position:       global_position,
+	Stored:         sim_entitiy,
 	chunk_position: world_chunk_position,
-	dP:             Vector2,
-	dir:            u32,
-	HitPointMax:    i32,
-	collides:       bool,
-	width:          f32,
-	height:         f32,
 }
 
 
@@ -248,23 +249,46 @@ getEntity :: proc(GameState: ^game_state, index: u32) -> entity {
 	e.high = &GameState.high_entities[index] //nil
 	return e
 }
-addWall :: proc(GameState: ^game_state, AbsTileX, AbsTileY, AbsTileZ: u32) -> u32 {
+addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
 	EI := addEntity(GameState)
-	GameState.low_entities[EI].position.AbsTileX = AbsTileX
-	GameState.low_entities[EI].position.AbsTileY = AbsTileY
-	GameState.low_entities[EI].position.AbsTileZ = AbsTileZ
-	GameState.low_entities[EI].height = GameState.world.TileSideM
-	GameState.low_entities[EI].width = GameState.low_entities[EI].height
-	GameState.low_entities[EI].collides = true
+	GameState.low_entities[EI].chunk_position.ChunkX = i32(ChunkX)
+	GameState.low_entities[EI].chunk_position.ChunkY = i32(ChunkY)
+	GameState.low_entities[EI].chunk_position.ChunkZ = i32(ChunkZ)
+
+	GameState.low_entities[EI].chunk_position.Offset = {
+		f32(Xshift) * GameState.world.TileSideM,
+		f32(Yshift) * GameState.world.TileSideM,
+	}
+	GameState.low_entities[EI].Stored.height = GameState.world.TileSideM
+	GameState.low_entities[EI].Stored.width = GameState.low_entities[EI].Stored.height
+	GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+	ChangeEntityLocation(GameState.world, EI, nil, &GameState.low_entities[EI].chunk_position)
 	return EI
 
 
 }
+when (TURNOFF) {
+	addMonster :: proc(GameState: ^game_state, AbsTileX, AbsTileY, AbsTileZ: u32) -> u32 {
+		EI := addEntity(GameState)
+		GameState.low_entities[EI].Stored.position.AbsTileX = AbsTileX
+		GameState.low_entities[EI].Stored.position.AbsTileY = AbsTileY
+		GameState.low_entities[EI].Stored.position.AbsTileZ = AbsTileZ
+		GameState.low_entities[EI].chunk_position = To_Chunk_Pos(
+			&GameState.low_entities[EI].Stored.position,
+			GameState.world,
+		)
+		GameState.low_entities[EI].Stored.height = .5
+		GameState.low_entities[EI].Stored.width = 1.0
+		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+		return EI
+
+
+	}
+}
 addEntity :: proc(GameState: ^game_state) -> u32 {
-	assert(GameState.entityCount < len(GameState.entity_residence) - 1)
+	fmt.println("Adding Entity", GameState.entityCount)
+	assert(GameState.entityCount < len(GameState.low_entities) - 1)
 	eC := GameState.entityCount
-	GameState.entity_residence[GameState.entityCount] = .DORMANT
-	GameState.high_entities[GameState.entityCount] = {}
 	GameState.low_entities[GameState.entityCount] = {}
 	GameState.entityCount += 1
 	return eC
@@ -312,7 +336,8 @@ Get_Chunk :: #force_inline proc(
 
 			return cur_Chunk.NextinHash
 		} else if create && cur_Chunk.ChunkX == 0 {
-			cur_Chunk = Alloc_Chunk_C(world, ChunkX, ChunkY, ChunkZ)
+			//TODO Currently this does nothing
+			cur_Chunk^ = Alloc_Chunk_C(world, ChunkX, ChunkY, ChunkZ)^
 			return cur_Chunk
 		}
 		cur_Chunk = cur_Chunk.NextinHash
@@ -336,44 +361,54 @@ Alloc_Chunk_C :: proc(world: ^World, ChunkX, ChunkY, ChunkZ: u32) -> ^world_chun
 
 	mappoint: ^[32][32]u32 = new([32][32]u32, GameMemory.PermanentStorageAlloc)
 
-
-	for i := 0; i < 32; i += 1 {
-		for j := 0; j < 32; j += 1 {
-			if i == 0 || i == 31 {
-			} else if j == 0 || j == 31 {
-
-
-				addWall(
-					GameState,
-					ChunkX * world.ChunkDim + u32(j),
-					ChunkY * world.ChunkDim + u32(i),
-					0,
-				)
-
-			} else if i % 3 == 0 && j % 5 == 0 {
+	when (TURNOFF) {
+		if false {
+			for i := 0; i < 32; i += 1 {
+				for j := 0; j < 32; j += 1 {
+					if i == 0 || i == 31 {
+					} else if j == 0 || j == 31 {
 
 
-				addWall(
-					GameState,
-					ChunkX * world.ChunkDim + u32(j),
-					ChunkY * world.ChunkDim + u32(i),
-					0,
-				)
-			} else if (i == 3 && j == 6) || (i == 3 && j == 7) {
+						addWall(
+							GameState,
+							ChunkX * world.ChunkDim + u32(j),
+							ChunkY * world.ChunkDim + u32(i),
+							0,
+						)
 
-				addWall(
-					GameState,
-					ChunkX * world.ChunkDim + u32(j),
-					ChunkY * world.ChunkDim + u32(i),
-					0,
-				)
+					} else if i % 3 == 0 && j % 5 == 0 {
 
-			} else {
+
+						addWall(
+							GameState,
+							ChunkX * world.ChunkDim + u32(j),
+							ChunkY * world.ChunkDim + u32(i),
+							0,
+						)
+					} else if (i == 3 && j == 6) || (i == 3 && j == 7) {
+
+						addWall(
+							GameState,
+							ChunkX * world.ChunkDim + u32(j),
+							ChunkY * world.ChunkDim + u32(i),
+							0,
+						)
+
+					} else {
+					}
+
+				}
 			}
-
-		}
+			//	mapn.Tiles = ([^]u32)(mappoint) //(raw_data(&Tilemap))
+			addWall(
+				GameState,
+				ChunkX * world.ChunkDim + u32(0),
+				ChunkY * world.ChunkDim + u32(0),
+				0,
+			)}
 	}
-	//	mapn.Tiles = ([^]u32)(mappoint) //(raw_data(&Tilemap))
+
+
 	return mapn
 
 }
@@ -435,30 +470,8 @@ To_Chunk_Pos :: #force_inline proc(
 
 UpdateWorldPos :: #force_inline proc(world: ^World) {
 
-	if GameState.low_entities[0].position.AbsTileY > world.Window_Pos.AbsTileY &&
-	   GameState.low_entities[0].position.AbsTileY - world.Window_Pos.AbsTileY >= windowSizey {
-		world.Window_Pos.AbsTileY += windowSizey
-		world.camera_pos.ChunkY += 1
-	} else if i32(GameState.low_entities[0].position.AbsTileY) - i32(world.Window_Pos.AbsTileY) <
-	   0 {
-		world.Window_Pos.AbsTileY -= windowSizey
-		world.camera_pos.ChunkY -= 1
-	}
-	if GameState.low_entities[0].position.AbsTileX > world.Window_Pos.AbsTileX &&
-	   GameState.low_entities[0].position.AbsTileX - world.Window_Pos.AbsTileX >= windowSizex {
-		world.Window_Pos.AbsTileX += windowSizex
 
-		world.camera_pos.ChunkX += 1
-
-		fmt.println("I'M HERE WINDOWPOSX", world.Window_Pos.AbsTileX)
-	} else if i32(GameState.low_entities[0].position.AbsTileX) - i32(world.Window_Pos.AbsTileX) <
-	   0 {
-
-		fmt.println("I'M HERE WINDOWPOSX", world.Window_Pos.AbsTileX)
-		world.Window_Pos.AbsTileX -= windowSizex
-
-		world.camera_pos.ChunkX -= 1
-	}
+	world.camera_pos = GameState.low_entities[GameState.Player_low_index].chunk_position
 
 
 }
@@ -487,25 +500,33 @@ Recon_Position :: #force_inline proc(Player_Position: ^global_position, world: ^
 }
 
 game_state :: struct {
-	world:            ^World,
-	arena:            mem_arena,
-	Player_Position:  global_position,
-	backGroundData:   []u8,
-	backGroundBmap:   ^bmp,
-	playerBmap:       ^bmp,
-	playerData:       []u8,
-	count:            u64,
-	Speed:            uint,
-	dPlayer:          Vector2, //TODO MOVE TO hf_entity
-	entityCount:      u32,
-	entity_residence: [256]entity_res,
-	high_entities:    [256]hf_entity,
-	low_entities:     [10000]low_entity,
-	sim_arena:        mem.Arena,
-	sim_alloc:        mem.Allocator,
-	Max_Sim_Ent:      u32,
+	world:                         ^World,
+	arena:                         mem_arena,
+	Player_Position:               global_position,
+	Player_low_index:              u32,
+	Camera_Following_Entity_Index: u32,
+	backGroundData:                []u8,
+	backGroundBmap:                ^bmp,
+	playerBmap:                    ^bmp,
+	playerData:                    []u8,
+	count:                         u64,
+	Speed:                         uint,
+	dPlayer:                       Vector2, //TODO MOVE TO hf_entity
+	entityCount:                   u32,
+	entity_residence:              [256]entity_res,
+	high_entities:                 [256]hf_entity,
+	low_entities:                  [10000]low_entity,
+	sim_arena:                     mem.Arena,
+	sim_alloc:                     mem.Allocator,
+	Max_Sim_Ent:                   u32,
+	controllers:                   [5]controll,
 }
 
+controll :: struct {
+	EntIndex: u32,
+	ddP:      Vector2,
+	aButton:  bool,
+}
 
 Map :: struct {
 	countx:   i32,
@@ -828,6 +849,7 @@ GameOutputSound :: proc(SoundBuffer: ^game_output_sound_buffer, ToneHz: u32) {
 
 HandleInput :: proc(
 	GameState: ^game_state,
+	index: int,
 	Input1: ^game_controller_input,
 	Height: i32,
 	Width: i32,
@@ -835,8 +857,8 @@ HandleInput :: proc(
 	world: ^World,
 	entIndex: u32,
 ) {
-	Entity := getEntity(GameState, entIndex)
-	oldPlayerP := Entity.dormant.position //GameState.Player_Position
+	controll := &GameState.controllers[index]
+
 	if Input1.isConnected {
 		if (Input1.IsAnalgo) {
 		} else {
@@ -844,18 +866,19 @@ HandleInput :: proc(
 		//This is the digital part of the analog stick... can handle a bunch of ways
 
 		ddPlayer: Vector2
+		ddPlayer.x = 0
+		ddPlayer.y = 0
+		controll.ddP = {0, 0}
 
 
 		switch buttons in Input1.padButtons {
 		case game_pad:
 			if buttons.Down.EndedDown {
-				ddPlayer.y = -1.0
+				controll.ddP.y = -1.0
 			}
 			if buttons.Left.EndedDown {
-				ddPlayer.x = -1.0
-				Entity.high.Left = true
-				Entity.high.Right = false
-				Entity.high.moving = true
+
+				controll.ddP.x = -1.0
 
 			} else {
 
@@ -863,240 +886,218 @@ HandleInput :: proc(
 			}
 			if buttons.Up.EndedDown {
 
-				ddPlayer.y = 1.0
+				controll.ddP.y = 1.0
 			}
 			if buttons.Right.EndedDown {
+				controll.ddP.x = 1.0
 
-				ddPlayer.x = 1.0
-				Entity.high.Right = true
-				Entity.high.Left = false
-
-				Entity.high.moving = true
 
 			} else {
 
 				//GameState.Player_Position.moving = false
 			}
-			if math.abs(ddPlayer.y) == math.abs(ddPlayer.x) {
-				ddPlayer *= .70710678118
+			if math.abs(controll.ddP.y) == math.abs(controll.ddP.x) {
+				controll.ddP *= .70710678118
 			}
-			if !(buttons.Right.EndedDown || buttons.Left.EndedDown) {
-				Entity.high.moving = false
-			}
+
 			if buttons.Action1.EndedDown {
 				fmt.println("Speed")
-				GameState.Speed = 1
+				controll.aButton = true
 
 			}
 
-			if buttons.Action2.EndedDown {
-				fmt.println("end speed")
+			when (TURNOFF) {
+				if buttons.Action2.EndedDown {
+					fmt.println("end speed")
 
-				GameState.Speed = 0
-			}
-			//push please
+					GameState.Speed = 0
+				}
+				//push please
 
-			if buttons.Action3.EndedDown {
-				fmt.println("Action3")
-			}
+				if buttons.Action3.EndedDown {
+					fmt.println("Action3")
+				}
 
-			if buttons.Action4.EndedDown {
-				fmt.println("Action4")
-			}
+				if buttons.Action4.EndedDown {
+					fmt.println("Action4")
+				}}
 		case [9]game_button_state:
 			if buttons[0].EndedDown {
 			}
 
 		}
-		ddPlayer *= 60.0 //m/s^2
-		if (GameState.Speed == 1) {
-			ddPlayer *= 5
-			ddPlayer *= 5
-		}
-
-		ddPlayer += -10 * GameState.dPlayer
-
-		PlayerDelta := dtForFrame * Entity.high.dPos + .5 * ddPlayer * dtForFrame * dtForFrame
-		NewPlayer := Entity.dormant.position.TileOffSet + PlayerDelta
-
-		Entity.high.dPos = ddPlayer * dtForFrame + GameState.dPlayer
-
-		P1 := Entity.dormant.position //GameState.Player_Position
-		P1.TileOffSet.x = NewPlayer.x
-		P1.TileOffSet.y = NewPlayer.y
-		Recon_Position(&P1, world)
-
 		when (TURNOFF) {
-			minSearchY: u32 = Min(P1.AbsTileY, GameState.low_entities[entIndex].position.AbsTileY)
-			minSearchX: u32 = Min(P1.AbsTileX, GameState.low_entities[entIndex].position.AbsTileX)
-			maxSearchY: u32 = Max(P1.AbsTileY, GameState.low_entities[entIndex].position.AbsTileY)
-			maxSearchX: u32 = Max(P1.AbsTileX, GameState.low_entities[entIndex].position.AbsTileX)
-
-
-			WidthTile: u32 = u32(math.ceil(world.PlayerW / world.TileSideM))
-			HeightTile: u32 = u32(math.ceil(world.PlayerH / world.TileSideM))
-			if minSearchX > 0 {
-				minSearchX -= WidthTile
-
+			ddPlayer *= 60.0 //m/s^2
+			if (GameState.Speed == 1) {
+				ddPlayer *= 5
+				ddPlayer *= 5
 			}
-			maxSearchX += WidthTile
 
-			maxSearchY += HeightTile
-		}
+			ddPlayer += -10 * GameState.dPlayer
+
+			PlayerDelta := dtForFrame * Entity.high.dPos + .5 * ddPlayer * dtForFrame * dtForFrame
+			NewPlayer := Entity.dormant.Stored.position.TileOffSet + PlayerDelta
+
+			Entity.high.dPos = ddPlayer * dtForFrame + GameState.dPlayer
+
+			P1 := Entity.dormant.Stored.position //GameState.Player_Position
+			P1.TileOffSet.x = NewPlayer.x
+			P1.TileOffSet.y = NewPlayer.y
+			Recon_Position(&P1, world)
+
+			when (TURNOFF) {
+				minSearchY: u32 = Min(
+					P1.AbsTileY,
+					GameState.low_entities[entIndex].position.AbsTileY,
+				)
+				minSearchX: u32 = Min(
+					P1.AbsTileX,
+					GameState.low_entities[entIndex].position.AbsTileX,
+				)
+				maxSearchY: u32 = Max(
+					P1.AbsTileY,
+					GameState.low_entities[entIndex].position.AbsTileY,
+				)
+				maxSearchX: u32 = Max(
+					P1.AbsTileX,
+					GameState.low_entities[entIndex].position.AbsTileX,
+				)
 
 
-		tLowest: f32 = 1
-		r: Vector2 = {0, 0}
+				WidthTile: u32 = u32(math.ceil(world.PlayerW / world.TileSideM))
+				HeightTile: u32 = u32(math.ceil(world.PlayerH / world.TileSideM))
+				if minSearchX > 0 {
+					minSearchX -= WidthTile
 
-		for Eindex: u32 = 0; Eindex <= GameState.entityCount; Eindex += 1 {
-			/*for minY: u32 = minSearchY; minY <= maxSearchY; minY += 1 {
+				}
+				maxSearchX += WidthTile
+
+				maxSearchY += HeightTile
+			}
+
+
+			tLowest: f32 = 1
+			r: Vector2 = {0, 0}
+
+			for Eindex: u32 = 0; Eindex <= GameState.entityCount; Eindex += 1 {
+				/*for minY: u32 = minSearchY; minY <= maxSearchY; minY += 1 {
 			//for minX: u32 = minSearchX; minX <= maxSearchX; minX += 1 {
 			TestP: global_position
 			TestP.AbsTileX = minX
 			TestP.AbsTileY = minY
 			TestP.TileOffSet = {0, 0}*/
-			if Eindex == entIndex {
-				continue
-			}
-			TestEntity := getEntity(GameState, Eindex)
-
-
-			Diam: Vector2
-			Diam.x = TestEntity.dormant.width + Entity.dormant.width
-			Diam.y = TestEntity.dormant.height + Entity.dormant.height
-			minCorner: Vector2 = Vector2{-.5 * Diam.x, -1 * TestEntity.dormant.height}
-			maxCorner: Vector2 = 1 * Vector2 {
-						TestEntity.dormant.width + .5 * Diam.x,
-						TestEntity.dormant.height - world.oneMinPH * TestEntity.dormant.height, //(.75 * world.TileSideM),
-					} // + Diam
-			dist := SubTile(world, &TestEntity.dormant.position, &oldPlayerP)
-
-			//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
-
-			if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
-				if TestWall(
-					minCorner.x, // - .5 * world.PlayerW,
-					dist.x,
-					dist.y,
-					PlayerDelta.x,
-					PlayerDelta.y,
-					&tLowest,
-					minCorner.y, // - Diam.y,
-					maxCorner.y,
-				) {
-					r.x = 1
-					r.y = 0
+				if Eindex == entIndex {
+					continue
 				}
+				TestEntity := getEntity(GameState, Eindex)
 
-			}
-			if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
-				if TestWall(
-					maxCorner.x, // + .5 * world.PlayerW,
-					dist.x,
-					dist.y,
-					PlayerDelta.x,
-					PlayerDelta.y,
-					&tLowest,
-					minCorner.y, // - Diam.y,
-					maxCorner.y,
-				) {
-					r.x = -1
-					r.y = 0
+
+				Diam: Vector2
+				Diam.x = TestEntity.dormant.Stored.width + Entity.dormant.Stored.width
+				Diam.y = TestEntity.dormant.Stored.height + Entity.dormant.Stored.height
+				minCorner: Vector2 = Vector2{-.5 * Diam.x, -1 * TestEntity.dormant.Stored.height}
+				maxCorner: Vector2 = 1 * Vector2 {
+							TestEntity.dormant.Stored.width + .5 * Diam.x,
+							TestEntity.dormant.Stored.height - world.oneMinPH * TestEntity.dormant.Stored.height, //(.75 * world.TileSideM),
+						} // + Diam
+				dist := SubTile(world, &TestEntity.dormant.Stored.position, &oldPlayerP)
+
+				//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
+
+				if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
+					if TestWall(
+						minCorner.x, // - .5 * world.PlayerW,
+						dist.x,
+						dist.y,
+						PlayerDelta.x,
+						PlayerDelta.y,
+						&tLowest,
+						minCorner.y, // - Diam.y,
+						maxCorner.y,
+					) {
+						r.x = 1
+						r.y = 0
+					}
 
 				}
-			}
+				if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
+					if TestWall(
+						maxCorner.x, // + .5 * world.PlayerW,
+						dist.x,
+						dist.y,
+						PlayerDelta.x,
+						PlayerDelta.y,
+						&tLowest,
+						minCorner.y, // - Diam.y,
+						maxCorner.y,
+					) {
+						r.x = -1
+						r.y = 0
 
-			if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
-				if TestWall(
-					minCorner.y, // + world.PlayerH, //- world.PlayerH,
-					dist.y,
-					dist.x,
-					PlayerDelta.y,
-					PlayerDelta.x,
-					&tLowest,
-					minCorner.x, //- .5 * world.PlayerW,
-					maxCorner.x, //+ .5 * world.PlayerW,
-				) {
-					r.y = 1
-					r.x = 0
+					}
 				}
-			}
 
-			if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
-				if TestWall(
-					maxCorner.y, // - world.PlayerH,
-					dist.y,
-					dist.x,
-					PlayerDelta.y,
-					PlayerDelta.x,
-					&tLowest,
-					minCorner.x, // - .5 * Diam.x,
-					maxCorner.x, //+ .5 * Diam.y,
-				) {
-					r.y = -1
-					r.x = 0
-					fmt.println("Max Y")
+				if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
+					if TestWall(
+						minCorner.y, // + world.PlayerH, //- world.PlayerH,
+						dist.y,
+						dist.x,
+						PlayerDelta.y,
+						PlayerDelta.x,
+						&tLowest,
+						minCorner.x, //- .5 * world.PlayerW,
+						maxCorner.x, //+ .5 * world.PlayerW,
+					) {
+						r.y = 1
+						r.x = 0
+					}
 				}
+
+				if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
+					if TestWall(
+						maxCorner.y, // - world.PlayerH,
+						dist.y,
+						dist.x,
+						PlayerDelta.y,
+						PlayerDelta.x,
+						&tLowest,
+						minCorner.x, // - .5 * Diam.x,
+						maxCorner.x, //+ .5 * Diam.y,
+					) {
+						r.y = -1
+						r.x = 0
+						fmt.println("Max Y")
+					}
+				}
+
+
+				//}
+			}
+			if tLowest != 1 {
+
+				tEpsilon: f32 = .8
+
+				GameState.low_entities[entIndex].Stored.position.TileOffSet +=
+					tEpsilon * tLowest * PlayerDelta
+				GameState.low_entities[entIndex].Stored.dP =
+					GameState.low_entities[entIndex].Stored.dP -
+					1 * dot(GameState.low_entities[entIndex].Stored.dP, r) * r
+
+				GameState.low_entities[entIndex].Stored.position.TileOffSet +=
+					(1 - tEpsilon * tLowest) * PlayerDelta -
+					1 * dot((1 - tEpsilon * tLowest) * PlayerDelta, r) * r
+			} else {
+				GameState.low_entities[entIndex].Stored.position.TileOffSet +=
+					.9 * tLowest * PlayerDelta
+
 			}
 
 
-			//}
+			Recon_Position(&GameState.low_entities[entIndex].Stored.position, world)
 		}
-		if tLowest != 1 {
-
-			tEpsilon: f32 = .8
-
-			GameState.low_entities[entIndex].position.TileOffSet +=
-				tEpsilon * tLowest * PlayerDelta
-			GameState.high_entities[entIndex].dPos =
-				GameState.high_entities[entIndex].dPos -
-				1 * dot(GameState.high_entities[entIndex].dPos, r) * r
-
-			GameState.low_entities[entIndex].position.TileOffSet +=
-				(1 - tEpsilon * tLowest) * PlayerDelta -
-				1 * dot((1 - tEpsilon * tLowest) * PlayerDelta, r) * r
-		} else {
-			GameState.low_entities[entIndex].position.TileOffSet += .9 * tLowest * PlayerDelta
-
-		}
-
-
-		Recon_Position(&GameState.low_entities[entIndex].position, world)
 	}
 }
 
-when (TURNOFF) {
-	IsWorldMapPointEmpty :: proc(
-		tile_map: ^Tile_Map,
-		world: ^World,
-		Player_Pos: ^global_position,
-	) -> bool {
-
-		//if Player_Pos.TileMapX >= 0 && Player_Pos.TileMapY >= 0 {
-		//	fmt.println("IWMPE: ", Player_Pos.AbsTileX, Player_Pos.AbsTileY)
-		chunkp := To_Chunk_Pos(Player_Pos, world)
-		map1 := Get_Chunk(tile_map, chunkp.ChunkX, chunkp.ChunkY, chunkp.ChunkZ, true) ///&world.maps[Player_Pos.TileMapY * i32(worldSizeX) + Player_Pos.TileMapX]
-
-
-		return IsMapPointEmpty(world, map1, chunkp.TileX, chunkp.TileY)
-	}
-
-	IsMapPointEmpty :: proc(world: ^World, map1: ^tile_chunk, TestX: u32, TestY: u32) -> bool {
-		PlayerTileX := TestX
-		PlayerTileY := TestY
-
-
-		if map1.Tiles[PlayerTileY * world.ChunkDim + PlayerTileX] != 1 {
-
-
-			return true
-		}
-
-
-		return false
-
-	}
-}
 
 @(export)
 game_hot_reloaded :: proc(mem: ^game_memory) {
@@ -1184,22 +1185,27 @@ game_GameUpdateAndRender :: proc(
 		GameState.world.ChunkX = 300
 		GameState.world.ChunkY = 300
 
-		for i in 0 ..< len(GameState.entity_residence) {
-			GameState.entity_residence[i] = .DORMANT
+
+		//GameState.world.worldchunks = new([4096]world_chunk)^
+		EI := addEntity(GameState)
+		GameState.Player_low_index = 0
+		GameState.low_entities[EI].Stored.type = .HERO
+		GameState.low_entities[EI].chunk_position.ChunkX = 5
+		GameState.low_entities[EI].chunk_position.ChunkY = 1
+		GameState.low_entities[EI].chunk_position.ChunkZ = 0
+		GameState.low_entities[EI].chunk_position.Offset = {
+			15 * GameState.world.TileSideM,
+			15 * GameState.world.TileSideM,
 		}
+		GameState.Camera_Following_Entity_Index = EI
+		GameState.world.camera_pos = GameState.low_entities[EI].chunk_position
 
-		GameState.Player_Position.AbsTileX = 166
-		GameState.Player_Position.AbsTileY = 36
-		E: entity
-		E.residence = .HIGH
-
-
-		addEntity(GameState)
-		GameState.entity_residence[0] = .HIGH
-		GameState.low_entities[0].position.AbsTileX = 166
-		GameState.low_entities[0].position.AbsTileY = 36
-		GameState.high_entities[0].width = .75 * GameState.world.TileSideM
-		GameState.high_entities[0].height = .33 * GameState.world.TileSideM
+		GameState.low_entities[EI].Stored.width = .75 * GameState.world.TileSideM
+		GameState.low_entities[EI].Stored.height = .33 * GameState.world.TileSideM
+		ChangeEntityLocation(GameState.world, 0, nil, &GameState.low_entities[EI].chunk_position)
+		addWall(GameState, 5, 1, 0, 12, 15)
+		addWall(GameState, 5, 1, 0, 12, 16)
+		addWall(GameState, 5, 1, 0, 13, 15)
 
 		when (TURNOFF) {
 
@@ -1215,25 +1221,28 @@ game_GameUpdateAndRender :: proc(
 		fmt.println("Initting Mem!")
 
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
-		GameState.world.Window_Pos.AbsTileY = 32
-		GameState.world.Window_Pos.AbsTileX = 160
-		GameState.world.Window_Pos.AbsTileZ = 0
-		fmt.println(
-			"Orig WP",
-			GameState.world.Window_Pos.AbsTileX,
-			GameState.world.Window_Pos.AbsTileY,
-		)
-		temp := To_Chunk_Pos(&GameState.Player_Position, GameState.world)
-		GameState.world.camera_pos = temp
+		when (TURNOFF) {
+			GameState.world.Window_Pos.AbsTileY = 32
+			GameState.world.Window_Pos.AbsTileX = 160
+			GameState.world.Window_Pos.AbsTileZ = 0
 
-		GameState.world.worldchunks = new([4096]world_chunk)^
-		//		GameState.world.chunks = make(
-		//			[^]^Map,
-		//			u64(GameState.world.ChunkX * GameState.world.ChunkY * size_of(^Map)),
-		//			Memory.PermanentStorageAlloc,
-		//		)
-		Get_Chunk(GameState.world, u32(temp.ChunkX), u32(temp.ChunkY), u32(temp.ChunkZ), true)
+			fmt.println(
+				"Orig WP",
+				GameState.world.Window_Pos.AbsTileX,
+				GameState.world.Window_Pos.AbsTileY,
+			)
+			temp := To_Chunk_Pos(&GameState.Player_Position, GameState.world)
+			GameState.world.camera_pos = temp
 
+
+			//		GameState.world.chunks = make(
+			//			[^]^Map,
+			//			u64(GameState.world.ChunkX * GameState.world.ChunkY * size_of(^Map)),
+			//			Memory.PermanentStorageAlloc,
+			//		)
+			Get_Chunk(GameState.world, u32(temp.ChunkX), u32(temp.ChunkY), u32(temp.ChunkZ), true)
+
+		}
 		GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
 
 
@@ -1250,10 +1259,43 @@ game_GameUpdateAndRender :: proc(
 		sim_buffer := make([]byte, GameState.Max_Sim_Ent * size_of(sim_entitiy) + 1024)
 		mem.arena_init(&GameState.sim_arena, sim_buffer)
 		GameState.sim_alloc = mem.arena_allocator(&GameState.sim_arena)
+		GameState.controllers[0].EntIndex = 0
 
 	}
-	MSpanX: f32 = 17 * 3 * GameState.world.TileSideM
-	MSpanY: f32 = 9 * 3 * GameState.world.TileSideM
+
+	for &controller, index in Input.Controllers {
+		HandleInput(
+			GameState,
+			index,
+			&controller,
+			Buffer.Height,
+			Buffer.Width,
+			Input.dtForFrame,
+			GameState.world,
+			0,
+		)
+	}
+
+	//			fmt.println("Entity: ", index)
+	PlayerR: f32 = .5
+	PlayerG: f32 = .5
+	PlayerB: f32 = 0.5
+	PlayerW: f32 = GameState.low_entities[GameState.Player_low_index].Stored.width
+
+	PlayerH: f32 = GameState.low_entities[GameState.Player_low_index].Stored.height
+	PlayerRenderH := GameState.world.TileSideM
+
+	GameState.world.PlayerH = PlayerH
+	GameState.world.PlayerW = PlayerW
+	GameState.world.oneMinPH = 1 - PlayerH / GameState.world.TileSideM
+
+	//SIM REGION START
+
+	MSpanX: f32 = 5 * GameState.world.TileSideM
+	MSpanY: f32 = 5 * GameState.world.TileSideM
+	ScreenCenterX := .5 * f32(Buffer.Width)
+	ScreenCenterY := .5 * f32(Buffer.Height)
+
 	CameraB := RectCenterDim({0, 0}, {MSpanX, MSpanY})
 	SimRegion := BeginSim(
 		&GameState.sim_alloc,
@@ -1261,9 +1303,8 @@ game_GameUpdateAndRender :: proc(
 		GameState.world.camera_pos,
 		CameraB,
 	)
-	EndSim(&GameState.sim_alloc, SimRegion, GameState)
 
-
+	//TODO FIX
 	RenderBckgrnd(
 		GameState.backGroundBmap,
 		GameState.backGroundData,
@@ -1271,128 +1312,82 @@ game_GameUpdateAndRender :: proc(
 		GameState.world,
 		GameState,
 	)
-
-	Temp_Pos := GameState.world.Window_Pos
-	tt := To_Chunk_Pos(&Temp_Pos, GameState.world)
-	//	fmt.println("Current Chunk: ", tt.ChunkX, tt.ChunkY)
-	for eindex: u32 = 0; eindex <= GameState.entityCount; eindex += 1 {
-		ent := getEntity(GameState, eindex)
-		if ent.dormant.position.AbsTileX >= Temp_Pos.AbsTileX &&
-		   ent.dormant.position.AbsTileY >= Temp_Pos.AbsTileY &&
-		   ent.dormant.position.AbsTileX < Temp_Pos.AbsTileX + windowSizex &&
-		   ent.dormant.position.AbsTileY <= Temp_Pos.AbsTileY + windowSizey {
-			color: f32 = 1.0
-			minX :=
-				f32(ent.dormant.position.AbsTileX - Temp_Pos.AbsTileX) *
-					GameState.world.TileSidePixels +
-				GameState.world.Upperleftstartx
-			minY :=
-				GameState.world.LowerLeftStartY -
-				f32(ent.dormant.position.AbsTileY - Temp_Pos.AbsTileY + 1) *
-					GameState.world.TileSidePixels +
-				GameState.world.Upperleftstarty
-
-			maxX := minX + GameState.world.TileSidePixels
-			maxY := minY + GameState.world.TileSidePixels
-
-			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-
-		}
-
-	}
 	when (TURNOFF) {
-		for i: u32 = 0; i < windowSizey; i += 1 {
-
-			for j: u32 = 0; j < windowSizex; j += 1 {
-				color: f32 = 1.0
-				Temp_Pos.AbsTileX = world.Window_Pos.AbsTileX + j
-				Temp_Pos.AbsTileY = world.Window_Pos.AbsTileY + i
-
-				//			fmt.println("Temp Ps: ", Temp_Pos.AbsTileX, Temp_Pos.AbsTileY)
-				current_chunk_pos := To_Chunk_Pos(&Temp_Pos, world)
-
-				if Temp_Pos.AbsTileY == GameState.Player_Position.AbsTileY &&
-				   Temp_Pos.AbsTileX == GameState.Player_Position.AbsTileX {
-					//fmt.println("h Player")
-					color = 0
-				}
-
-
-				when (TURNOFF) {
-					Tileid := Get_Tile_Value(world, &current_chunk_pos) //tile_map[world.currenty][world.currentx].Tilemap[i * mapcountx + j]
-				}
-
-				Tileid := 0
-				if Tileid == 1 {
-					color = 1.0
-					minX := f32(j) * world.TileSidePixels + world.Upperleftstartx
-					minY :=
-						world.LowerLeftStartY -
-						f32(i + 1) * world.TileSidePixels +
-						world.Upperleftstarty
-
-					maxX := minX + world.TileSidePixels
-					maxY := minY + world.TileSidePixels
-
-					DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-
-
-				}
-			}
-		}
+		Temp_Pos := GameState.world.Window_Pos
+		tt := To_Chunk_Pos(&Temp_Pos, GameState.world)
+		//	fmt.println("Current Chunk: ", tt.ChunkX, tt.ChunkY)
 	}
 	GameState.count += 1
 	if GameState.count >= 32 {
 		GameState.count = 0
 	}
 
-	for ent, index in GameState.high_entities {
-		if GameState.entity_residence[index] == .HIGH {
-			for &controller in Input.Controllers {
-				HandleInput(
-					GameState,
-					&controller,
-					Buffer.Height,
-					Buffer.Width,
-					Input.dtForFrame,
-					GameState.world,
-					0,
-				)
+
+	for &ent, index in SimRegion.Entities {
+		if u32(index) == SimRegion.Entity_Count {
+			break
+		}
+		curEnt := GameState.low_entities[ent.StorageIndex]
+		dt := Input.dtForFrame
+
+		if ent.type != .HERO {
+			color: f32 = 1.0
+			/*minX :=
+				f32(curEnt.Stored.position.AbsTileX - Temp_Pos.AbsTileX) *
+					GameState.world.TileSidePixels +
+				GameState.world.Upperleftstartx
+			minY :=
+				GameState.world.LowerLeftStartY -
+				f32(curEnt.Stored.position.AbsTileY - Temp_Pos.AbsTileY + 1) *
+					GameState.world.TileSidePixels +
+				GameState.world.Upperleftstarty*/
+			minX := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
+			minY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+
+			maxX := minX + GameState.world.MetersToPixels
+			maxY := minY + GameState.world.MetersToPixels
+
+
+			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
+		} if ent.type == .HERO  || ent.type!= .HERO{
+			ddP: Vector2
+
+			for controller in GameState.controllers {
+				if controller.EntIndex == ent.StorageIndex {
+
+					ddP = controller.ddP
+					break
+				}
 			}
+			fmt.println("ddp: ", ddP.x, ddP.y)
+			MoveEntity(SimRegion, &ent, dt, ddP)
+			dorm := GameState.low_entities[GameState.Player_low_index]
 
-			//			fmt.println("Entity: ", index)
-			PlayerR: f32 = .5
-			PlayerG: f32 = .5
-			PlayerB: f32 = 0.5
-			PlayerW: f32 = ent.width //GameState.world.hf_entity[index].width //.75 * GameState.world.TileSideM
-			//.75 * tile_map[GameState.world.currenty][GameState.world.currentx].TileWidt
-			PlayerH := ent.height //.33 * GameState.world.TileSideM
-			PlayerRenderH := GameState.world.TileSideM
 
-			GameState.world.PlayerH = PlayerH
-			GameState.world.PlayerW = PlayerW
-			GameState.world.oneMinPH = 1 - PlayerH / GameState.world.TileSideM
-			dorm := GameState.low_entities[index]
-
-			PlayerL: f32 =
+			PlayerL :=
+				ScreenCenterX +
+				ent.Pos.x /*f32 =
 				f32(
-					f32(dorm.position.AbsTileX - GameState.world.Window_Pos.AbsTileX) *
+					f32(dorm.Stored.position.AbsTileX - GameState.world.Window_Pos.AbsTileX) *
 					GameState.world.TileSidePixels,
 				) -
 				.5 * (GameState.world.MetersToPixels * PlayerW) +
-				GameState.world.MetersToPixels * dorm.position.TileOffSet.x
+				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.x*/
 
 
-			BMPT: f32 =
+			/*BMPT: f32 =
 				GameState.world.LowerLeftStartY -
-				(f32(dorm.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) + .7) *
+				(f32(dorm.Stored.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) +
+						.7) *
 					GameState.world.TileSidePixels -
-				GameState.world.MetersToPixels * dorm.position.TileOffSet.y
-			PlayerT: f32 =
+				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.y*/
+			PlayerT :=
+				ScreenCenterY -
+				ent.Pos.y /*f32 =
 				GameState.world.LowerLeftStartY -
-				f32(dorm.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) *
+				f32(dorm.Stored.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) *
 					GameState.world.TileSidePixels -
-				GameState.world.MetersToPixels * dorm.position.TileOffSet.y
+				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.y*/
 
 
 			DrawRect(
@@ -1411,7 +1406,7 @@ game_GameUpdateAndRender :: proc(
 			}
 
 
-			RenderBmp(
+			/*RenderBmp(
 				GameState.playerBmap,
 				GameState.playerData,
 				Buffer,
@@ -1422,10 +1417,14 @@ game_GameUpdateAndRender :: proc(
 				i32(math.round_f32(GameState.world.MetersToPixels)) + 60,
 				x,
 				31,
-				index,
-			)
+				int(GameState.Player_low_index),
+			)*/
+
 		}
 	}
+
+	EndSim(&GameState.sim_alloc, SimRegion, GameState)
+	GameState.world.camera_pos = GameState.low_entities[0].chunk_position
 
 
 	return true
