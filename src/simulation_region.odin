@@ -45,6 +45,7 @@ LoadEntityReference :: proc(SimRegion: ^sim_region, LowEntityIndex: u32) -> ^sim
 	}
 	return nil
 }
+dummy :: proc() {}
 BeginSim :: proc(
 	SimAlloc: ^mem.Allocator,
 	world: ^World,
@@ -55,6 +56,9 @@ BeginSim :: proc(
 
 	MinChunkP := MapIntoChunkSpace(world, RegionCenter, Bounds.min)
 	MaxChunkP := MapIntoChunkSpace(world, RegionCenter, Bounds.max)
+	if !AreInSameChunk(&MinChunkP, &MaxChunkP) {
+		dummy()
+	}
 	cSR := new(sim_region, SimAlloc^)
 	//TODO maybe a recursive tree
 	cSR.sim_entity_lut = make(map[u32]int, cSR.Max_Entity_Count, SimAlloc^)
@@ -77,6 +81,7 @@ BeginSim :: proc(
 					if .NONSPATIAL not_in Low.Stored.attributes {
 						SimSpaceP := GetSimSpaceP(cSR, Low)
 						if isInRectangle(&cSR.Bounds, &SimSpaceP) {
+							SimSpaceP += .5 * {Low.Stored.width, Low.Stored.height}
 							AddEntity(cSR, LowEntityIndex, Low, &SimSpaceP)
 						}
 					}
@@ -86,7 +91,10 @@ BeginSim :: proc(
 
 		}
 	}
-	for &Entity in cSR.Entities {
+	for &Entity, index in cSR.Entities {
+		if u32(index) > cSR.Entity_Count {
+			break
+		}
 		sim_idx, ok := cSR.sim_entity_lut[Entity.targetIndex]
 		if ok {
 			Entity.targetTemp = &cSR.Entities[sim_idx]
@@ -169,13 +177,14 @@ null_pos :: proc() -> world_chunk_position {
 }
 
 EndSim :: proc(SimAlloc: ^mem.Allocator, region: ^sim_region, game_s: ^game_state) {
-	for curEntity, index in region.Entities {
+	for &curEntity, index in region.Entities {
 		if u32(index) == region.Entity_Count {
 			break
 
 		}
 		storedEnt := &game_s.low_entities[curEntity.StorageIndex]
 		//TODO CHECK IF THIS ACTUALLY WORKS
+		curEntity.Pos -= .5 * {curEntity.width, curEntity.height}
 		storedEnt.Stored = curEntity
 		NewP :=
 			MapIntoChunkSpace(region.world, region.Center, curEntity.Pos) if .NONSPATIAL not_in curEntity.attributes else null_pos()
@@ -186,6 +195,7 @@ EndSim :: proc(SimAlloc: ^mem.Allocator, region: ^sim_region, game_s: ^game_stat
 			&storedEnt.chunk_position,
 			&NewP,
 		)
+
 		// Do player check right here and update the world camera - todotomorrow
 
 	}
@@ -229,7 +239,6 @@ isInRectangle :: #force_inline proc(Bounds: ^rectangle2, Pos: ^Vector2) -> bool 
 //TODO Add a movespec struct
 MoveEntity :: proc(SimRegion: ^sim_region, Entity: ^sim_entitiy, dt: f32, ddP: Vector2) {
 	//TODO Don't move apron entities just collisons
-
 	assert(.NONSPATIAL not_in Entity.attributes, "Trying to move non-spatial entity")
 	ddPlayer := ddP * 60.0 //m/s^2
 	ddPlayer += -10 * Entity.dP
@@ -243,106 +252,121 @@ MoveEntity :: proc(SimRegion: ^sim_region, Entity: ^sim_entitiy, dt: f32, ddP: V
 	r: Vector2 = {0, 0}
 	if .COLLIDES in Entity.attributes {
 		//TODO Spacial Partition
-		for TestEntity in SimRegion.Entities {
-			if TestEntity.StorageIndex == Entity.StorageIndex {
-				continue
+		for i in 0 ..< 4 {
+			if tLowest == 0 {
+				break
 			}
-			if .COLLIDES in TestEntity.attributes && .NONSPATIAL not_in Entity.attributes {
-
-				Diam: Vector2
-				Diam.x = TestEntity.width + Entity.width
-				Diam.y = TestEntity.height + Entity.height
-				minCorner: Vector2 = Vector2{-.5 * Diam.x, -1 * TestEntity.height}
-				maxCorner: Vector2 = 1 * Vector2 {
-							TestEntity.width + .5 * Diam.x,
-							TestEntity.height - SimRegion.world.oneMinPH * TestEntity.height, //(.75 * world.TileSideM),
-						} // + Diam
-				dist := Entity.Pos - TestEntity.Pos
-
-				//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
-
-				if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
-					if TestWall(
-						minCorner.x, // - .5 * world.PlayerW,
-						dist.x,
-						dist.y,
-						PlayerDelta.x,
-						PlayerDelta.y,
-						&tLowest,
-						minCorner.y, // - Diam.y,
-						maxCorner.y,
-					) {
-						r.x = 1
-						r.y = 0
-					}
-
+			for TestEntity, index in SimRegion.Entities {
+				if u32(index) == SimRegion.Entity_Count {
+					break
 				}
-				if (math.sign(dist.x) != math.sign(PlayerDelta.x) && math.abs(PlayerDelta.x) > 0) {
-					if TestWall(
-						maxCorner.x, // + .5 * world.PlayerW,
-						dist.x,
-						dist.y,
-						PlayerDelta.x,
-						PlayerDelta.y,
-						&tLowest,
-						minCorner.y, // - Diam.y,
-						maxCorner.y,
-					) {
-						r.x = -1
-						r.y = 0
+				if TestEntity.StorageIndex == Entity.StorageIndex {
+					continue
+				}
+				if .COLLIDES in TestEntity.attributes && .NONSPATIAL not_in Entity.attributes {
+
+					Diam: Vector2
+					Diam.x = TestEntity.width + Entity.width
+					Diam.y = TestEntity.height + Entity.height
+					/*minCorner: Vector2 = {-1 * Entity.width, -1 * Entity.height - .005}
+						maxCorner: Vector2 = {TestEntity.width + .005, TestEntity.height + .005}*/
+					minCorner := -.5 * Diam
+					maxCorner := .5 * Diam //+ {.1, .1}
+					dist := Entity.Pos - TestEntity.Pos
+
+					//					fmt.println("Distance: ", dist.x, dist.y, "Dir:", PlayerDelta.x, PlayerDelta.y)
+
+					if (math.sign(dist.x) != math.sign(PlayerDelta.x) &&
+						   math.abs(PlayerDelta.x) > 0) {
+						if TestWall(
+							minCorner.x, // - .5 * world.PlayerW,
+							dist.x,
+							dist.y,
+							PlayerDelta.x,
+							PlayerDelta.y,
+							&tLowest,
+							minCorner.y, // - Diam.y,
+							maxCorner.y,
+						) {
+							r.x = 1
+							r.y = 0
+							fmt.println("Min X")
+						}
 
 					}
-				}
+					if (math.sign(dist.x) != math.sign(PlayerDelta.x) &&
+						   math.abs(PlayerDelta.x) > 0) {
+						if TestWall(
+							maxCorner.x, // + .5 * world.PlayerW,
+							dist.x,
+							dist.y,
+							PlayerDelta.x,
+							PlayerDelta.y,
+							&tLowest,
+							minCorner.y, // - Diam.y,
+							maxCorner.y,
+						) {
+							r.x = -1
+							r.y = 0
 
-				if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
-					if TestWall(
-						minCorner.y, // + world.PlayerH, //- world.PlayerH,
-						dist.y,
-						dist.x,
-						PlayerDelta.y,
-						PlayerDelta.x,
-						&tLowest,
-						minCorner.x, //- .5 * world.PlayerW,
-						maxCorner.x, //+ .5 * world.PlayerW,
-					) {
-						r.y = 1
-						r.x = 0
+							fmt.println("Max X")
+						}
 					}
-				}
 
-				if (math.sign(dist.y) != math.sign(PlayerDelta.y) && math.abs(PlayerDelta.y) > 0) {
-					if TestWall(
-						maxCorner.y, // - world.PlayerH,
-						dist.y,
-						dist.x,
-						PlayerDelta.y,
-						PlayerDelta.x,
-						&tLowest,
-						minCorner.x, // - .5 * Diam.x,
-						maxCorner.x, //+ .5 * Diam.y,
-					) {
-						r.y = -1
-						r.x = 0
-						fmt.println("Max Y")
+					if (math.sign(dist.y) != math.sign(PlayerDelta.y) &&
+						   math.abs(PlayerDelta.y) > 0) {
+						if TestWall(
+							minCorner.y, // + world.PlayerH, //- world.PlayerH,
+							dist.y,
+							dist.x,
+							PlayerDelta.y,
+							PlayerDelta.x,
+							&tLowest,
+							minCorner.x, //- .5 * world.PlayerW,
+							maxCorner.x, //+ .5 * world.PlayerW,
+						) {
+							r.y = 1
+							r.x = 0
+							fmt.println("Min Y")
+						}
 					}
+
+					if (math.sign(dist.y) != math.sign(PlayerDelta.y) &&
+						   math.abs(PlayerDelta.y) > 0) {
+						if TestWall(
+							maxCorner.y, // - world.PlayerH,
+							dist.y,
+							dist.x,
+							PlayerDelta.y,
+							PlayerDelta.x,
+							&tLowest,
+							minCorner.x, // - .5 * Diam.x,
+							maxCorner.x, //+ .5 * Diam.y,
+						) {
+							r.y = -1
+							r.x = 0
+							fmt.println("Max Y")
+						}
+					}
+
+
+					//}
 				}
-
-
-				//}
 			}
-		}
-		if tLowest != 1 {
+			if tLowest != 1 {
 
-			tEpsilon: f32 = .8
+				tEpsilon: f32 = 1
 
-			Entity.Pos += tEpsilon * tLowest * PlayerDelta
-			Entity.dP = Entity.dP - 1 * dot(Entity.dP, r) * r
+				Entity.Pos += tEpsilon * tLowest * PlayerDelta
+				Entity.dP = Entity.dP - 1 * dot(Entity.dP, r) * r
+				PlayerDelta = PlayerDelta - 1 * dot(PlayerDelta, r) * r
+				PlayerDelta *= (1 - tLowest)
 
-			Entity.Pos +=
-				(1 - tEpsilon * tLowest) * PlayerDelta -
-				1 * dot((1 - tEpsilon * tLowest) * PlayerDelta, r) * r
-		} else {
-			Entity.Pos += .9 * tLowest * PlayerDelta
+			} else {
+				Entity.Pos += .9 * tLowest * PlayerDelta
+				break
+			}
+			tLowest = 1
 		}
 
 
@@ -352,12 +376,15 @@ MoveEntity :: proc(SimRegion: ^sim_region, Entity: ^sim_entitiy, dt: f32, ddP: V
 
 			Entity.dir = 2
 		}
-		if (Entity.dP.x != 0 || Entity.dP.y != 0) {
-			Entity.moving = true}
+		if (ddP.x != 0 || ddP.y != 0) {
+			Entity.moving = true
+		} else {
+			Entity.moving = false
+		}
 
 
 	} else {
 
-		Entity.Pos += PlayerDelta
+		Entity.Pos += .9 * PlayerDelta
 	}
 }

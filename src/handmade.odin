@@ -1,10 +1,11 @@
 package main
-import "core:slice"
-
+import "core:bufio"
 import "core:encoding/endian"
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:slice"
+import sdl "vendor:sdl3"
 
 import "core:mem"
 
@@ -96,6 +97,7 @@ ChangeEntityLocation :: #force_inline proc(
 			Block.Entity_Count += 1
 
 			GameState.low_entities[LowEntityIndex].Stored.attributes -= {.NONSPATIAL}
+			GameState.low_entities[LowEntityIndex].chunk_position = NewP^
 		} else {
 
 			GameState.low_entities[LowEntityIndex].Stored.attributes += {.NONSPATIAL}
@@ -123,10 +125,10 @@ TestWall :: proc(
 	if PlayerDeltTarget != 0 {
 		tResult := -1 * (RelTarget - Wall) / PlayerDeltTarget
 		Y := RelFixed + tResult * PlayerDeltaFixed
-		if (tResult >= 0 && tMin^ > tResult) {
+		if (tResult > 0 && tMin^ > tResult) {
 			if (false || (Y > minFixed && Y < maxFixed)) {
 
-				tMin^ = tResult
+				tMin^ = max(0, tResult - .001)
 				fmt.println("Updating Tmin: ", Wall, RelTarget, PlayerDeltTarget, tMin^)
 
 				return true
@@ -296,7 +298,6 @@ when (TURNOFF) {
 	}
 }
 addEntity :: proc(GameState: ^game_state) -> u32 {
-	fmt.println("Adding Entity", GameState.entityCount)
 	assert(GameState.entityCount < len(GameState.low_entities) - 1)
 	eC := GameState.entityCount
 	GameState.low_entities[GameState.entityCount] = {}
@@ -348,6 +349,22 @@ Get_Chunk :: #force_inline proc(
 		} else if create && cur_Chunk.ChunkX == 0 {
 			//TODO Currently this does nothing
 			cur_Chunk^ = Alloc_Chunk_C(world, ChunkX, ChunkY, ChunkZ)^
+			for i := 0; i < 32; i += 1 {
+				for j := 0; j < 32; j += 1 {
+					if i == 0 && j != 10 && j != 11 && j != 12 {
+						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
+					}; if i == 31 && j != 10 && j != 11 && j != 12 {
+
+						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
+					}
+					if j == 0 && (i < 20 || i > 25) {
+						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
+					}
+					if (i == 15 || i == 16) && j > 15 && j < 20 {
+						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
+					}
+				}
+			}
 			return cur_Chunk
 		}
 		cur_Chunk = cur_Chunk.NextinHash
@@ -370,53 +387,6 @@ Alloc_Chunk_C :: proc(world: ^World, ChunkX, ChunkY, ChunkZ: u32) -> ^world_chun
 
 
 	mappoint: ^[32][32]u32 = new([32][32]u32, GameMemory.PermanentStorageAlloc)
-
-	when (TURNOFF) {
-		if false {
-			for i := 0; i < 32; i += 1 {
-				for j := 0; j < 32; j += 1 {
-					if i == 0 || i == 31 {
-					} else if j == 0 || j == 31 {
-
-
-						addWall(
-							GameState,
-							ChunkX * world.ChunkDim + u32(j),
-							ChunkY * world.ChunkDim + u32(i),
-							0,
-						)
-
-					} else if i % 3 == 0 && j % 5 == 0 {
-
-
-						addWall(
-							GameState,
-							ChunkX * world.ChunkDim + u32(j),
-							ChunkY * world.ChunkDim + u32(i),
-							0,
-						)
-					} else if (i == 3 && j == 6) || (i == 3 && j == 7) {
-
-						addWall(
-							GameState,
-							ChunkX * world.ChunkDim + u32(j),
-							ChunkY * world.ChunkDim + u32(i),
-							0,
-						)
-
-					} else {
-					}
-
-				}
-			}
-			//	mapn.Tiles = ([^]u32)(mappoint) //(raw_data(&Tilemap))
-			addWall(
-				GameState,
-				ChunkX * world.ChunkDim + u32(0),
-				ChunkY * world.ChunkDim + u32(0),
-				0,
-			)}
-	}
 
 
 	return mapn
@@ -530,6 +500,7 @@ game_state :: struct {
 	sim_alloc:                     mem.Allocator,
 	Max_Sim_Ent:                   u32,
 	controllers:                   [5]controll,
+	bg_texture:                    ^sdl.Texture,
 }
 
 controll :: struct {
@@ -615,7 +586,7 @@ DrawRect :: proc(
 	if minX < 0 {
 		minX = 0
 	}; if minY < 0 {
-		maxY = maxY + minY
+		//maxY = maxY + minY
 		minY = 0
 	}; if maxX > Buffer.Width {
 		maxX = Buffer.Width
@@ -627,7 +598,7 @@ DrawRect :: proc(
 	Green := math.round_f32(255 * G)
 	Red := math.round_f32(255 * R)
 	//final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 8 | cast(u32)Blue
-	final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 16 | cast(u32)Blue << 0 | 0xff << 24
+	final: u32 = (cast(u32)Red) << 16 | (cast(u32)Green) << 8 | cast(u32)Blue << 0 | 0xff << 24
 
 
 	Color: u32 = 0xffff0000
@@ -681,7 +652,14 @@ loadBMP :: proc(filename: string) -> ([]u8, ^bmp) {
 		bmpdPtr = &bmpdata
 
 		//bmpdata^ = tmp
-		fmt.println("len bmpData:", len(bmpdata), "len ptr deref: ", len(bmpdPtr^))
+		fmt.println(
+			"len bmpData:",
+			len(bmpdata),
+			"len ptr deref: ",
+			len(bmpdPtr^),
+			bmap.Offset,
+			bmap.bpp,
+		)
 		return bmpdata, bmap
 
 
@@ -741,7 +719,7 @@ RenderBmp :: proc(
 				//final: u32 = (cast(u32)fR) << 24 | (cast(u32)fG) << 16 | cast(u32)fB << 8
 
 
-				if !GameState.high_entities[entIndex].Left {
+				if GameState.low_entities[entIndex].Stored.dir == 2 {
 					//	if test[(y + StartY) * img.width + x + StartX] >> 24 > 128 {
 
 
@@ -780,12 +758,21 @@ RenderBckgrnd :: proc(
 	Rowz: [^]u8 = cast([^]u8)Buffer.memory
 	Pitch := Buffer.Pitch
 	test := slice.reinterpret([]u32, imgData)
+	//fmt.println("img w:", img.width, "img h:", img.height)
 
-	for y: i32 = 0; y < img.height; y += 1 {
+	final := -1 * img.height
+
+
+	for y: i32 = 0; y < final; y += 1 {
 		Pixel: [^]u32 = cast([^]u32)Rowz
+		row := y * Pitch
+		pixel := y * img.width
+
 		for x: i32 = 0; x < img.width; x += 1 {
-			Pixel[((i32(world.LowerLeftStartY) - y) * Pitch) + x + i32(world.Upperleftstartx)] =
-				test[y * img.width + x] //& 0x004F4F4F
+
+			Pixel[(row) + x + i32(world.Upperleftstartx)] = test[pixel + x] //& 0x004F4F4F
+			/*Pixel[((i32(world.LowerLeftStartY) - y) * Pitch) + x + i32(world.Upperleftstartx)] =
+				test[y * img.width + x] //& 0x004F4F4F*/
 		}
 	}
 
@@ -1162,16 +1149,17 @@ game_GameUpdateAndRender :: proc(
 	Memory: ^game_memory,
 	Input: ^game_input,
 	Buffer: ^game_offscreen_buffer,
+	renderer: ^sdl.Renderer,
 ) -> bool {
 	//TODO Possibly implement the game to be told where in time to put sound
 	Input0: ^game_controller_input = &Input.Controllers[0]
 	Input1: ^game_controller_input = &Input.Controllers[1]
-	file_name := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/forest.bmp"
 	//file_name := "src/lol.txt"
 	file_name_w := "src/test1.txt"
 
 
 	if !Memory.isInit {
+
 		//TODO This should almost certainly just be 1 multipointer but have to cross that bridge later
 		fmt.println("Initting Mem!")
 		Memory.isInit = true
@@ -1185,7 +1173,7 @@ game_GameUpdateAndRender :: proc(
 		GameState.world.TileSidePixels = 70.0
 		GameState.world.Upperleftstarty = 5.0
 		GameState.world.Upperleftstartx = 5.0
-		GameState.world.LowerLeftStartX = 5.0
+		GameState.world.LowerLeftStartX = 0.0
 		GameState.world.LowerLeftStartY = 635.0
 
 		GameState.world.MetersToPixels = GameState.world.TileSidePixels / 1.4
@@ -1221,51 +1209,22 @@ game_GameUpdateAndRender :: proc(
 			nil,
 			&GameState.low_entities[EI].chunk_position,
 		)
-		addWall(GameState, 5, 1, 0, 12, 15)
-		addWall(GameState, 5, 1, 0, 12, 16)
-		addWall(GameState, 5, 1, 0, 13, 15)
-
-		when (TURNOFF) {
-
-
-			E.dormant.position.AbsTileX = 166
-			E.dormant.position.AbsTileY = 36
-			E.dormant.type = .HERO
-			E.dormant.collides = true
-			E.high.width = .75 * world.TileSideM
-			E.high.height = .33 * world.TileSideM
-			addEntity(E)
-		}
-		fmt.println("Initting Mem!")
 
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
-		when (TURNOFF) {
-			GameState.world.Window_Pos.AbsTileY = 32
-			GameState.world.Window_Pos.AbsTileX = 160
-			GameState.world.Window_Pos.AbsTileZ = 0
-
-			fmt.println(
-				"Orig WP",
-				GameState.world.Window_Pos.AbsTileX,
-				GameState.world.Window_Pos.AbsTileY,
-			)
-			temp := To_Chunk_Pos(&GameState.Player_Position, GameState.world)
-			GameState.world.camera_pos = temp
-
-
-			//		GameState.world.chunks = make(
-			//			[^]^Map,
-			//			u64(GameState.world.ChunkX * GameState.world.ChunkY * size_of(^Map)),
-			//			Memory.PermanentStorageAlloc,
-			//		)
-			Get_Chunk(GameState.world, u32(temp.ChunkX), u32(temp.ChunkY), u32(temp.ChunkZ), true)
-
+		//GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
+		file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+		surface := sdl.LoadBMP(file_name)
+		if surface == nil {
+			fmt.println("DIDNT LOAD TEXTURE")
 		}
-		GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
+		temp := sdl.CreateTextureFromSurface(renderer, surface)
+		file_name2 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
+		GameState.bg_texture = temp
+		fmt.println("renderer", renderer^)
+		fmt.println("TempTexture:", temp)
+		fmt.println("GSBG TEMP", GameState.bg_texture)
 
-
-		file_name = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
-		GameState.playerData, GameState.playerBmap = loadBMP(file_name)
+		GameState.playerData, GameState.playerBmap = loadBMP(file_name2)
 		fmt.println(
 			"bgdata size: ",
 			len(GameState.backGroundData),
@@ -1295,9 +1254,9 @@ game_GameUpdateAndRender :: proc(
 	}
 
 	//			fmt.println("Entity: ", index)
-	PlayerR: f32 = .5
-	PlayerG: f32 = .5
-	PlayerB: f32 = 0.5
+	PlayerR: f32 = 1
+	PlayerG: f32 = 1
+	PlayerB: f32 = 1
 	PlayerW: f32 = GameState.low_entities[GameState.Player_low_index].Stored.width
 
 	PlayerH: f32 = GameState.low_entities[GameState.Player_low_index].Stored.height
@@ -1309,13 +1268,14 @@ game_GameUpdateAndRender :: proc(
 
 	//SIM REGION START
 
-	MSpanX: f32 = 5 * GameState.world.TileSideM
-	MSpanY: f32 = 5 * GameState.world.TileSideM
 	ScreenCenterX := .5 * f32(Buffer.Width)
 	ScreenCenterY := .5 * f32(Buffer.Height)
+	MSpanX: f32 = 3 * 17 * GameState.world.TileSideM
+	MSpanY: f32 = 3 * 9 * GameState.world.TileSideM
 
 	CameraB := RectCenterDim({0, 0}, {MSpanX, MSpanY})
 	//fmt.print("change for push")
+	mem.zero(Buffer.memory, 4 * int(Buffer.Height * Buffer.Width))
 	SimRegion := BeginSim(
 		&GameState.sim_alloc,
 		GameState.world,
@@ -1324,14 +1284,7 @@ game_GameUpdateAndRender :: proc(
 	)
 
 	//TODO FIX
-	/*RenderBckgrnd(
-		GameState.backGroundBmap,
-		GameState.backGroundData,
-		Buffer,
-		GameState.world,
-		GameState,
-	)*/
-
+	/*
 	DrawRect(
 		Buffer,
 		0,
@@ -1341,7 +1294,15 @@ game_GameUpdateAndRender :: proc(
 		0,
 		0,
 		0,
-	)
+	)*/
+	/*RenderBckgrnd(
+		GameState.backGroundBmap,
+		GameState.backGroundData,
+		Buffer,
+		GameState.world,
+		GameState,
+	)*/
+
 	when (TURNOFF) {
 		Temp_Pos := GameState.world.Window_Pos
 		tt := To_Chunk_Pos(&Temp_Pos, GameState.world)
@@ -1375,8 +1336,10 @@ game_GameUpdateAndRender :: proc(
 				GameState.world.LowerLeftStartX +
 				ScreenCenterX +
 				ent.Pos.x * GameState.world.MetersToPixels
+			minX -= .5 * ent.width * GameState.world.MetersToPixels
 			maxX := minX + ent.width * GameState.world.MetersToPixels
 			maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+			maxY += .5 * ent.height * GameState.world.MetersToPixels
 
 			minY := maxY - ent.height * GameState.world.MetersToPixels
 
@@ -1392,43 +1355,20 @@ game_GameUpdateAndRender :: proc(
 					break
 				}
 			}
-			fmt.println("ddp: ", ddP.x, ddP.y)
+			//fmt.println("ddp: ", ddP.x, ddP.y)
 			MoveEntity(SimRegion, &ent, dt, ddP)
-			dorm := GameState.low_entities[GameState.Player_low_index]
 
 
-			PlayerL :=
-				ScreenCenterX +
-				ent.Pos.x /*f32 =
-				f32(
-					f32(dorm.Stored.position.AbsTileX - GameState.world.Window_Pos.AbsTileX) *
-					GameState.world.TileSidePixels,
-				) -
-				.5 * (GameState.world.MetersToPixels * PlayerW) +
-				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.x*/
-
-
-			/*BMPT: f32 =
-				GameState.world.LowerLeftStartY -
-				(f32(dorm.Stored.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) +
-						.7) *
-					GameState.world.TileSidePixels -
-				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.y*/
-			PlayerT :=
-				ScreenCenterY -
-				ent.Pos.y /*f32 =
-				GameState.world.LowerLeftStartY -
-				f32(dorm.Stored.position.AbsTileY - GameState.world.Window_Pos.AbsTileY + 1) *
-					GameState.world.TileSidePixels -
-				GameState.world.MetersToPixels * dorm.Stored.position.TileOffSet.y*/
-
-
+			PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
+			PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
+			PlayerT := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+			PlayerT += .5 * ent.height * GameState.world.MetersToPixels
 			DrawRect(
 				Buffer,
 				PlayerL,
 				PlayerT - ent.height * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
 				PlayerL + PlayerW * GameState.world.MetersToPixels,
-				ScreenCenterY,
+				PlayerT,
 				PlayerR,
 				PlayerG,
 				PlayerB,
@@ -1437,9 +1377,10 @@ game_GameUpdateAndRender :: proc(
 			if (ent.moving) {
 				x = 64 + (i32(GameState.count) / 4) * 200
 			}
+			BMPT := PlayerT - 80 // ent.height * GameState.world.MetersToPixels
 
 
-			/*RenderBmp(
+			RenderBmp(
 				GameState.playerBmap,
 				GameState.playerData,
 				Buffer,
@@ -1451,13 +1392,25 @@ game_GameUpdateAndRender :: proc(
 				x,
 				31,
 				int(GameState.Player_low_index),
-			)*/
+			)
 
 		}
 	}
 
 	EndSim(&GameState.sim_alloc, SimRegion, GameState)
+	GameState.world.camera_pos = GameState.low_entities[GameState.Player_low_index].chunk_position
+	/*fmt.println(
+		GameState.low_entities[GameState.Player_low_index].chunk_position,
+		GameState.world.ChunkSideM,
+	)*/
 	//GameState.world.camera_pos = GameState.low_entities[0].chunk_position
+
+
+	buf_pitch: i32 = 1200 * 4
+	//sdl3.UpdateTexture(texture, nil, Global_Back_Buffer.memory, buf_pitch)
+
+	//sdl.RenderClear(renderer)
+	//sdl3.RenderTexture(renderer, texture, nil, &dest_rect)
 
 
 	return true

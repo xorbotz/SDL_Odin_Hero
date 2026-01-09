@@ -67,7 +67,7 @@ GameAPI :: struct {
 	sd:                  proc(),
 	mem_ptr:             proc() -> rawptr,
 	GameGetSoundSamples: proc(_: rawptr, _: rawptr, _: rawptr) -> bool,
-	GameUpdateAndRender: proc(_: rawptr, _: rawptr, _: rawptr, _: rawptr) -> bool,
+	GameUpdateAndRender: proc(_: rawptr, _: rawptr, _: rawptr, _: rawptr, _: rawptr) -> bool,
 	hot_reloaded:        proc(_: rawptr),
 	lib:                 dynlib.Library,
 	dll_time:            time.Time, //os.File_Time,
@@ -395,14 +395,28 @@ main :: proc() {
 
 	window := sdl.CreateWindow("Example Renderer", 1200, 700, {.RESIZABLE})
 	renderer := sdl.CreateRenderer(window, driver)
+
+	sdl.SetRenderLogicalPresentation(renderer, 1200, 700, .LETTERBOX)
+	file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+	surface := sdl.LoadBMP(file_name)
+	if surface == nil {
+		fmt.println("DIDNT LOAD TEXTURE")
+	} else {
+		fmt.println("surfaceloaded")}
+	fmt.println("Main Enderer", renderer^)
+	bg_texture := sdl.CreateTextureFromSurface(renderer, surface)
+	fmt.println("MAIN METHOD TEXTURE", bg_texture)
+	sdl.DestroySurface(surface)
 	texture := sdl.CreateTexture(
 		renderer,
 		sdl.PixelFormat.BGRA32,
 		sdl.TextureAccess.STREAMING,
 		1200,
-		720,
+		700,
 	)
-	sdl.SetRenderLogicalPresentation(renderer, 1200, 700, .LETTERBOX)
+	sdl.SetTextureBlendMode(texture, {.BLEND})
+	sdl.SetTextureBlendMode(bg_texture, {.BLEND})
+
 
 	defer sdl.DestroyWindow(window)
 	defer sdl.DestroyRenderer(renderer)
@@ -431,7 +445,7 @@ main :: proc() {
 	GameUpdateHz := MonitorRefresh / 2
 	SecondsPerFrame: f32 = (1.0 / cast(f32)GameUpdateHz)
 	PCFResult: u64 = sdl.GetPerformanceCounter()
-	PerfCounterFrequency = PCFResult
+	PerfCounterFrequency = sdl.GetPerformanceFrequency() //PCFResult
 	DesiredSchedulerMS: u32 = 1
 
 	ResizeDIBSection(&Global_Back_Buffer, 1200, 700)
@@ -681,34 +695,54 @@ main :: proc() {
 		Buffer.Height = Global_Back_Buffer.Height
 		Buffer.Pitch = Global_Back_Buffer.Pitch
 
+		EndCycleCount := intrinsics.read_cycle_counter()
+		CycleElapsed := EndCycleCount - LastCycleCount
+		WorkCounter := win32GetWallClock()
+		SecondsElapseWork := win32GetSecondsElapsed(LastCounter, WorkCounter)
+
+		LastCounter = win32GetWallClock()
+		SecondsElapsedForFrame := SecondsElapseWork
+
+		NewInput.dtForFrame = SecondsPerFrame
 		game_api.GameUpdateAndRender(
 			&Thread,
 			cast(^game_memory)game_api.mem_ptr(),
 			NewInput,
 			&Buffer,
+			&renderer,
 		)
 
-		EndCycleCount := intrinsics.read_cycle_counter()
-		CycleElapsed := EndCycleCount - LastCycleCount
-		WorkCounter := win32GetWallClock()
-		SecondsElapseWork := win32GetSecondsElapsed(LastCounter, WorkCounter)
-		SecondsElapsedForFrame := SecondsElapseWork
 
-		EndCounter := win32GetWallClock()
-		MSPFrame: f32 = 1000.0 * win32GetSecondsElapsed(LastCounter, win32GetWallClock())
-		LastCounter = EndCounter
-
-		buf_pitch: i32 = 1200 * 4
-		sdl.UpdateTexture(texture, nil, Global_Back_Buffer.memory, buf_pitch)
-		sdl.SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff)
+		sdl.SetRenderDrawColor(renderer, 0, 0, 0, 255)
 		sdl.RenderClear(renderer)
-		dest_rect: sdl.FRect
-		dest_rect.x = 0
-		dest_rect.y = 0
-		dest_rect.w = 1200
-		dest_rect.h = 700
-		sdl.RenderTexture(renderer, texture, nil, &dest_rect)
+
+		xpos :=
+			(f32(GameState.low_entities[0].chunk_position.ChunkX) * GameState.world.ChunkSideM.x +
+				GameState.low_entities[0].chunk_position.Offset.x) *
+			GameState.world.MetersToPixels
+		tw, th: f32
+		sdl.GetTextureSize(bg_texture, &tw, &th)
+		fmt.println(xpos)
+		for xpos > tw {
+			xpos -= tw
+		}
+		src_Rect1 := sdl.FRect{xpos, 0, tw - xpos, 700}
+		dest_rect1: sdl.FRect = {0, 0, tw - xpos, 700}
+
+		src_Rect2 := sdl.FRect{0, 0, xpos, 700}
+		dest_rect2: sdl.FRect = {tw - xpos, 0, xpos, 700}
+		sdl.RenderTexture(renderer, bg_texture, &src_Rect1, &dest_rect1)
+		sdl.RenderTexture(renderer, bg_texture, &src_Rect2, &dest_rect2)
+		sdl.UpdateTexture(texture, nil, Global_Back_Buffer.memory, 1200 * 4)
+
+		dest_rect3: sdl.FRect = {0, 0, tw, 700}
+		sdl.RenderTexture(renderer, texture, nil, &dest_rect3)
+
+
 		sdl.RenderPresent(renderer)
+
+		MSPFrame: f32 = 1000.0 * win32GetSecondsElapsed(LastCounter, win32GetWallClock())
+
 		/*
 		CopyBufferToWindow(
 			&Global_Back_Buffer,
@@ -726,14 +760,17 @@ main :: proc() {
 
 		// Cap fps if enabled
 		npf_target := u64(1000000000 / fps_target) // nanoseconds per frame target
+
 		if fps_cap_enabled && (frame_end - frame_start) < npf_target {
 			sleep_time := npf_target - (frame_end - frame_start)
 			sdl.DelayPrecise(sleep_time)
 			frame_end = sdl.GetTicksNS() // Update frame_end counter to include sleep_time for fps calculation
 		}
 
+
 		// update fps tracker
 		fps = 1000000000.000 / f64(frame_end - frame_start)
+		//fmt.println(fps)
 		FlipWallClock = win32GetWallClock()
 
 		LastCycleCount = EndCycleCount
@@ -742,6 +779,7 @@ main :: proc() {
 		//fmt.println(NewInput.Controllers[0].padButtons)
 		NewInput = OldInput
 		OldInput = Temp
+
 	}
 	//game_api.sd()
 	unload_game_api(game_api)
