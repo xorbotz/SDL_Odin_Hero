@@ -11,6 +11,7 @@ sim_region :: struct {
 	world:            ^World,
 	Center:           world_chunk_position,
 	Bounds:           rectangle2,
+	UpdateBounds:     rectangle2,
 	Entity_Count:     u32,
 	Max_Entity_Count: u32,
 	Entities:         []sim_entitiy,
@@ -117,6 +118,7 @@ sim_entity_flags :: bit_set[sim_entity_flag;u32]
 
 sim_entitiy :: struct {
 	StorageIndex: u32,
+	Updateable:   bool,
 	attributes:   sim_entity_flags,
 	Pos:          Vector2,
 	dir:          u32,
@@ -155,6 +157,7 @@ AddEntity_wLow :: proc(
 		SimRegion.sim_entity_lut[LowEntityIndex] = Index
 		if simP != nil {
 			Dest.Pos = simP^
+			Dest.Updateable = isInRectangle(&SimRegion.UpdateBounds, &Dest.Pos)
 		} else {
 			Dest.Pos = GetSimSpaceP(SimRegion, Entity)
 		}

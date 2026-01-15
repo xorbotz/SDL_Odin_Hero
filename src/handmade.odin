@@ -1320,10 +1320,11 @@ game_GameUpdateAndRender :: proc(
 		}
 		curEnt := GameState.low_entities[ent.StorageIndex]
 		dt := Input.dtForFrame
+		if ent.Updateable {
 
-		if ent.type != .HERO {
-			color: f32 = 1.0
-			/*minX :=
+			if ent.type != .HERO {
+				color: f32 = 1.0
+				/*minX :=
 				f32(curEnt.Stored.position.AbsTileX - Temp_Pos.AbsTileX) *
 					GameState.world.TileSidePixels +
 				GameState.world.Upperleftstartx
@@ -1332,68 +1333,69 @@ game_GameUpdateAndRender :: proc(
 				f32(curEnt.Stored.position.AbsTileY - Temp_Pos.AbsTileY + 1) *
 					GameState.world.TileSidePixels +
 				GameState.world.Upperleftstarty*/
-			minX :=
-				GameState.world.LowerLeftStartX +
-				ScreenCenterX +
-				ent.Pos.x * GameState.world.MetersToPixels
-			minX -= .5 * ent.width * GameState.world.MetersToPixels
-			maxX := minX + ent.width * GameState.world.MetersToPixels
-			maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
-			maxY += .5 * ent.height * GameState.world.MetersToPixels
+				minX :=
+					GameState.world.LowerLeftStartX +
+					ScreenCenterX +
+					ent.Pos.x * GameState.world.MetersToPixels
+				minX -= .5 * ent.width * GameState.world.MetersToPixels
+				maxX := minX + ent.width * GameState.world.MetersToPixels
+				maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+				maxY += .5 * ent.height * GameState.world.MetersToPixels
 
-			minY := maxY - ent.height * GameState.world.MetersToPixels
+				minY := maxY - ent.height * GameState.world.MetersToPixels
 
-			DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-		}
-		if ent.type == .HERO {
-			ddP: Vector2
+				DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
+			}
+			if ent.type == .HERO {
+				ddP: Vector2
 
-			for controller in GameState.controllers {
-				if controller.EntIndex == ent.StorageIndex {
+				for controller in GameState.controllers {
+					if controller.EntIndex == ent.StorageIndex {
 
-					ddP = controller.ddP
-					break
+						ddP = controller.ddP
+						break
+					}
 				}
+				//fmt.println("ddp: ", ddP.x, ddP.y)
+				MoveEntity(SimRegion, &ent, dt, ddP)
+
+
+				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
+				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
+				PlayerT := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+				PlayerT += .5 * ent.height * GameState.world.MetersToPixels
+				DrawRect(
+					Buffer,
+					PlayerL,
+					PlayerT - ent.height * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
+					PlayerL + PlayerW * GameState.world.MetersToPixels,
+					PlayerT,
+					PlayerR,
+					PlayerG,
+					PlayerB,
+				)
+				x: i32 = 64
+				if (ent.moving) {
+					x = 64 + (i32(GameState.count) / 4) * 200
+				}
+				BMPT := PlayerT - 80 // ent.height * GameState.world.MetersToPixels
+
+
+				RenderBmp(
+					GameState.playerBmap,
+					GameState.playerData,
+					Buffer,
+					GameState.world,
+					i32(math.round_f32(PlayerL)),
+					i32(math.round_f32(BMPT)),
+					i32(math.round_f32(PlayerW * GameState.world.MetersToPixels) + 20),
+					i32(math.round_f32(GameState.world.MetersToPixels)) + 60,
+					x,
+					31,
+					int(GameState.Player_low_index),
+				)
+
 			}
-			//fmt.println("ddp: ", ddP.x, ddP.y)
-			MoveEntity(SimRegion, &ent, dt, ddP)
-
-
-			PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
-			PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
-			PlayerT := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
-			PlayerT += .5 * ent.height * GameState.world.MetersToPixels
-			DrawRect(
-				Buffer,
-				PlayerL,
-				PlayerT - ent.height * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
-				PlayerL + PlayerW * GameState.world.MetersToPixels,
-				PlayerT,
-				PlayerR,
-				PlayerG,
-				PlayerB,
-			)
-			x: i32 = 64
-			if (ent.moving) {
-				x = 64 + (i32(GameState.count) / 4) * 200
-			}
-			BMPT := PlayerT - 80 // ent.height * GameState.world.MetersToPixels
-
-
-			RenderBmp(
-				GameState.playerBmap,
-				GameState.playerData,
-				Buffer,
-				GameState.world,
-				i32(math.round_f32(PlayerL)),
-				i32(math.round_f32(BMPT)),
-				i32(math.round_f32(PlayerW * GameState.world.MetersToPixels) + 20),
-				i32(math.round_f32(GameState.world.MetersToPixels)) + 60,
-				x,
-				31,
-				int(GameState.Player_low_index),
-			)
-
 		}
 	}
 
