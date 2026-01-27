@@ -61,12 +61,16 @@ BeginSim :: proc(
 		dummy()
 	}
 	cSR := new(sim_region, SimAlloc^)
-	//TODO maybe a recursive tree
+	//TODO maybe a recursive tree - or our own hastable
 	cSR.sim_entity_lut = make(map[u32]int, cSR.Max_Entity_Count, SimAlloc^)
+
+	//TODO IMPORTANT - CALC this
+	safetyMeasure: f32 = 1.0
 
 	cSR.world = world
 	cSR.Center = RegionCenter
-	cSR.Bounds = Bounds
+	cSR.UpdateBounds = Bounds
+	cSR.Bounds = AddRadiusTo(cSR.UpdateBounds, safetyMeasure, safetyMeasure)
 	cSR.Entity_Count = 0
 	//TODO THINK ABOUT THIS SIZE
 	cSR.Max_Entity_Count = 4096
@@ -222,6 +226,13 @@ RectCenterDim :: #force_inline proc(Center: Vector2, Dim: Vector2) -> rectangle2
 	result.min = Center - Dim
 	result.max = Center + Dim
 	return result
+}
+AddRadiusTo :: #force_inline proc(r: rectangle2, w, h: f32) -> rectangle2 {
+	res := r
+	res.min -= Vector2{w, h}
+	res.max += Vector2{w, h}
+	return res
+
 }
 RectDim :: #force_inline proc(bottom_left: Vector2, Dim: Vector2) -> rectangle2 {
 

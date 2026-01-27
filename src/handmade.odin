@@ -214,6 +214,7 @@ entity_type :: enum {
 	HERO,
 	WALL,
 	MONSTER,
+	FAMILIAR,
 	PROJECTILE,
 }
 direction :: enum {
@@ -255,6 +256,33 @@ getEntity :: proc(GameState: ^game_state, index: u32) -> entity {
 	e.high = &GameState.high_entities[index] //nil
 	return e
 }
+addFamiliar :: proc(
+	GameState: ^game_state,
+	ChunkX, ChunkY, ChunkZ, Xshift, Yshift, Following: u32,
+) -> u32 {
+	EI := addEntity(GameState)
+	GameState.low_entities[EI].chunk_position.ChunkX = i32(ChunkX)
+	GameState.low_entities[EI].chunk_position.ChunkY = i32(ChunkY)
+	GameState.low_entities[EI].chunk_position.ChunkZ = i32(ChunkZ)
+
+	GameState.low_entities[EI].chunk_position.Offset = {
+		f32(Xshift) * GameState.world.TileSideM,
+		f32(Yshift) * GameState.world.TileSideM,
+	}
+	FollowingE := GameState.low_entities[Following].Stored
+	GameState.low_entities[EI].Stored.height = FollowingE.height / 2
+	GameState.low_entities[EI].Stored.width = FollowingE.width / 2
+	GameState.low_entities[EI].Stored.targetIndex = Following
+	GameState.low_entities[EI].Stored.type = .FAMILIAR
+	ChangeEntityLocation(
+		GameState,
+		GameState.world,
+		EI,
+		nil,
+		&GameState.low_entities[EI].chunk_position,
+	)
+	return EI
+}
 addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
 	EI := addEntity(GameState)
 	GameState.low_entities[EI].chunk_position.ChunkX = i32(ChunkX)
@@ -268,6 +296,7 @@ addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: 
 	GameState.low_entities[EI].Stored.height = GameState.world.TileSideM
 	GameState.low_entities[EI].Stored.width = GameState.low_entities[EI].Stored.height
 	GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+	GameState.low_entities[EI].Stored.type = .WALL
 	ChangeEntityLocation(
 		GameState,
 		GameState.world,
@@ -1209,7 +1238,17 @@ game_GameUpdateAndRender :: proc(
 			nil,
 			&GameState.low_entities[EI].chunk_position,
 		)
+		following := GameState.low_entities[EI]
 
+		EI = addFamiliar(
+			GameState,
+			u32(following.chunk_position.ChunkX),
+			u32(following.chunk_position.ChunkY),
+			u32(following.chunk_position.ChunkZ),
+			u32(following.chunk_position.Offset.x - 2),
+			u32(following.chunk_position.Offset.y - 2),
+			0,
+		)
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
 		//GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
 		file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
@@ -1320,9 +1359,9 @@ game_GameUpdateAndRender :: proc(
 		}
 		curEnt := GameState.low_entities[ent.StorageIndex]
 		dt := Input.dtForFrame
-		if ent.Updateable {
+		if ent.Updateable || true {
 
-			if ent.type != .HERO {
+			if ent.type == .WALL {
 				color: f32 = 1.0
 				/*minX :=
 				f32(curEnt.Stored.position.AbsTileX - Temp_Pos.AbsTileX) *
@@ -1345,8 +1384,7 @@ game_GameUpdateAndRender :: proc(
 				minY := maxY - ent.height * GameState.world.MetersToPixels
 
 				DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-			}
-			if ent.type == .HERO {
+			} else if ent.type == .HERO {
 				ddP: Vector2
 
 				for controller in GameState.controllers {
@@ -1358,7 +1396,6 @@ game_GameUpdateAndRender :: proc(
 				}
 				//fmt.println("ddp: ", ddP.x, ddP.y)
 				MoveEntity(SimRegion, &ent, dt, ddP)
-
 
 				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
 				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
@@ -1394,6 +1431,33 @@ game_GameUpdateAndRender :: proc(
 					31,
 					int(GameState.Player_low_index),
 				)
+
+			} else if ent.type == .FAMILIAR {
+				colorR: f32 = 1.0
+
+				ddP: Vector2
+				following := GameState.low_entities[ent.targetIndex].Stored
+				ddP = 1 * (following.dP - ent.dP)
+				if abs(ddP.x) < 1 {
+					ddP.x = 0}
+				if abs(ddP.y) < 1 {
+					ddP.y = 0}
+
+
+				MoveEntity(SimRegion, &ent, dt, ddP)
+				minX :=
+					GameState.world.LowerLeftStartX +
+					ScreenCenterX +
+					ent.Pos.x * GameState.world.MetersToPixels
+				minX -= .5 * ent.width * GameState.world.MetersToPixels
+				maxX := minX + ent.width * GameState.world.MetersToPixels
+				maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+				maxY += .5 * ent.height * GameState.world.MetersToPixels
+
+				minY := maxY - ent.height * GameState.world.MetersToPixels
+
+				DrawRect(Buffer, minX, minY, maxX, maxY, colorR, 0.0, colorR)
+
 
 			}
 		}
