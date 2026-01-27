@@ -7,6 +7,11 @@ import "core:math"
 
 import "core:mem"
 
+move_spec :: struct {
+	accel_scale: f32,
+	friction:    f32,
+}
+
 sim_region :: struct {
 	world:            ^World,
 	Center:           world_chunk_position,
@@ -251,11 +256,17 @@ isInRectangle :: #force_inline proc(Bounds: ^rectangle2, Pos: ^Vector2) -> bool 
 	)
 }
 //TODO Add a movespec struct
-MoveEntity :: proc(SimRegion: ^sim_region, Entity: ^sim_entitiy, dt: f32, ddP: Vector2) {
+MoveEntity :: proc(
+	SimRegion: ^sim_region,
+	Entity: ^sim_entitiy,
+	dt: f32,
+	ddP: Vector2,
+	moveSpec: move_spec,
+) {
 	//TODO Don't move apron entities just collisons
 	assert(.NONSPATIAL not_in Entity.attributes, "Trying to move non-spatial entity")
-	ddPlayer := ddP * 60.0 //m/s^2
-	ddPlayer += -10 * Entity.dP
+	ddPlayer := ddP * moveSpec.accel_scale //m/s^2
+	ddPlayer += moveSpec.friction * Entity.dP
 	PlayerDelta := dt * Entity.dP + .5 * ddPlayer * dt * dt
 	NewPlayer := Entity.Pos + PlayerDelta
 

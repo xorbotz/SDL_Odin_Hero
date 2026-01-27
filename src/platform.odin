@@ -75,13 +75,15 @@ GameAPI :: struct {
 }
 
 load_game_api :: proc(api_version: int) -> (GameAPI, bool) {
-	dll_time, dll_time_err := os.last_write_time_by_name("game.dll")
+	dll_time, dll_time_err := os.last_write_time_by_name(
+		"/home/mrcoyne/CLionProjects/SDL_Odin_Hero/game.dll",
+	)
 	if dll_time_err != os.ERROR_NONE {
 		fmt.println("FETCHING DLL FAILED")
 		return {}, false
 	}
 
-	dll_name := "/home/xorbot/CLionProjects/SDL_Odin_Hero/game.dll" //fmt.tprintf("game_{0}.dll", api_version)
+	dll_name := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/game.dll" //fmt.tprintf("game_{0}.dll", api_version)
 	copy_cmd := fmt.ctprintf("copy game.dll {0}", dll_name)
 	/*if libc.system(copy_cmd) != 0 {
 		fmt.println("FAILED TO COPY game.dll to {0}", dll_name)
@@ -397,7 +399,7 @@ main :: proc() {
 	renderer := sdl.CreateRenderer(window, driver)
 
 	sdl.SetRenderLogicalPresentation(renderer, 1200, 700, .LETTERBOX)
-	file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+	file_name: cstring = "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
 	surface := sdl.LoadBMP(file_name)
 	if surface == nil {
 		fmt.println("DIDNT LOAD TEXTURE")
@@ -722,7 +724,6 @@ main :: proc() {
 			GameState.world.MetersToPixels
 		tw, th: f32
 		sdl.GetTextureSize(bg_texture, &tw, &th)
-		fmt.println(xpos)
 		for xpos > tw {
 			xpos -= tw
 		}

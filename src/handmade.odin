@@ -1251,13 +1251,13 @@ game_GameUpdateAndRender :: proc(
 		)
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
 		//GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
-		file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+		file_name: cstring = "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
 		surface := sdl.LoadBMP(file_name)
 		if surface == nil {
 			fmt.println("DIDNT LOAD TEXTURE")
 		}
 		temp := sdl.CreateTextureFromSurface(renderer, surface)
-		file_name2 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
+		file_name2 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
 		GameState.bg_texture = temp
 		fmt.println("renderer", renderer^)
 		fmt.println("TempTexture:", temp)
@@ -1395,7 +1395,7 @@ game_GameUpdateAndRender :: proc(
 					}
 				}
 				//fmt.println("ddp: ", ddP.x, ddP.y)
-				MoveEntity(SimRegion, &ent, dt, ddP)
+				MoveEntity(SimRegion, &ent, dt, ddP, {60.0, -10.0})
 
 				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
 				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
@@ -1437,11 +1437,15 @@ game_GameUpdateAndRender :: proc(
 
 				ddP: Vector2
 				following := GameState.low_entities[ent.targetIndex].Stored
-				ddP.x = 1 if (following.dP.x - ent.dP.x) >= 0 else -1
-				ddP.y = 1 if (following.dP.y - ent.dP.y) >= 0 else -1
+				ddP.x = 1 if (following.Pos.x - ent.Pos.x) >= 0 else -1
+				ddP.y = 1 if (following.Pos.y - ent.Pos.y) >= 0 else -1
+				ddP.x =
+					0 if (following.Pos.x - ent.Pos.x) * (following.Pos.x - ent.Pos.x) < 4.0 else ddP.x
 
+				ddP.y =
+					0 if (following.Pos.y - ent.Pos.y) * (following.Pos.y - ent.Pos.y) < 4.0 else ddP.y
 
-				MoveEntity(SimRegion, &ent, dt, ddP)
+				MoveEntity(SimRegion, &ent, dt, ddP, {40.0, -10.0})
 				minX :=
 					GameState.world.LowerLeftStartX +
 					ScreenCenterX +
