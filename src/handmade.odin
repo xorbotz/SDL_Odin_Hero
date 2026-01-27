@@ -1437,11 +1437,8 @@ game_GameUpdateAndRender :: proc(
 
 				ddP: Vector2
 				following := GameState.low_entities[ent.targetIndex].Stored
-				ddP = 1 * (following.dP - ent.dP)
-				if abs(ddP.x) < 1 {
-					ddP.x = 0}
-				if abs(ddP.y) < 1 {
-					ddP.y = 0}
+				ddP.x = 1 if (following.dP.x - ent.dP.x) >= 0 else -1
+				ddP.y = 1 if (following.dP.y - ent.dP.y) >= 0 else -1
 
 
 				MoveEntity(SimRegion, &ent, dt, ddP)
