@@ -276,7 +276,7 @@ MoveEntity :: proc(
 	P1 := Entity.Pos //GameState.Player_Position
 	tLowest: f32 = 1
 	r: Vector2 = {0, 0}
-	if .COLLIDES in Entity.attributes {
+	if .COLLIDES in Entity.attributes && .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
 		for i in 0 ..< 4 {
 			if tLowest == 0 {
@@ -289,7 +289,7 @@ MoveEntity :: proc(
 				if TestEntity.StorageIndex == Entity.StorageIndex {
 					continue
 				}
-				if .COLLIDES in TestEntity.attributes && .NONSPATIAL not_in Entity.attributes {
+				if .COLLIDES in TestEntity.attributes && .NONSPATIAL not_in TestEntity.attributes {
 
 					Diam: Vector2
 					Diam.x = TestEntity.width + Entity.width
@@ -389,7 +389,7 @@ MoveEntity :: proc(
 				PlayerDelta *= (1 - tLowest)
 
 			} else {
-				Entity.Pos += .9 * tLowest * PlayerDelta
+				Entity.Pos += 1.0 * tLowest * PlayerDelta
 				break
 			}
 			tLowest = 1

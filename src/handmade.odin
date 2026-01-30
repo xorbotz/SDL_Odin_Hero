@@ -1358,10 +1358,13 @@ game_GameUpdateAndRender :: proc(
 			break
 		}
 		curEnt := GameState.low_entities[ent.StorageIndex]
-		dt := Input.dtForFrame
 		if ent.Updateable || true {
+			dt := Input.dtForFrame
+			MoveSpec: move_spec = {0, 0}
+			ddP: Vector2
+			#partial switch ent.type {
 
-			if ent.type == .WALL {
+			case .WALL:
 				color: f32 = 1.0
 				/*minX :=
 				f32(curEnt.Stored.position.AbsTileX - Temp_Pos.AbsTileX) *
@@ -1384,9 +1387,7 @@ game_GameUpdateAndRender :: proc(
 				minY := maxY - ent.height * GameState.world.MetersToPixels
 
 				DrawRect(Buffer, minX, minY, maxX, maxY, color, color, color)
-			} else if ent.type == .HERO {
-				ddP: Vector2
-
+			case .HERO:
 				for controller in GameState.controllers {
 					if controller.EntIndex == ent.StorageIndex {
 
@@ -1395,7 +1396,9 @@ game_GameUpdateAndRender :: proc(
 					}
 				}
 				//fmt.println("ddp: ", ddP.x, ddP.y)
-				MoveEntity(SimRegion, &ent, dt, ddP, {60.0, -10.0})
+
+				//MoveEntity(SimRegion, &ent, dt, ddP, {60.0, -10.0})
+				MoveSpec = {60.0, -10.0}
 
 				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
 				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
@@ -1432,10 +1435,9 @@ game_GameUpdateAndRender :: proc(
 					int(GameState.Player_low_index),
 				)
 
-			} else if ent.type == .FAMILIAR {
+			case .FAMILIAR:
 				colorR: f32 = 1.0
 
-				ddP: Vector2
 				following := GameState.low_entities[ent.targetIndex].Stored
 				ddP.x = 1 if (following.Pos.x - ent.Pos.x) >= 0 else -1
 				ddP.y = 1 if (following.Pos.y - ent.Pos.y) >= 0 else -1
@@ -1444,8 +1446,9 @@ game_GameUpdateAndRender :: proc(
 
 				ddP.y =
 					0 if (following.Pos.y - ent.Pos.y) * (following.Pos.y - ent.Pos.y) < 4.0 else ddP.y
+				MoveSpec = {40.0, -8.0}
 
-				MoveEntity(SimRegion, &ent, dt, ddP, {40.0, -10.0})
+				//MoveEntity(SimRegion, &ent, dt, ddP, {40.0, -10.0})
 				minX :=
 					GameState.world.LowerLeftStartX +
 					ScreenCenterX +
@@ -1461,6 +1464,9 @@ game_GameUpdateAndRender :: proc(
 
 
 			}
+
+			MoveEntity(SimRegion, &ent, dt, ddP, MoveSpec)
+
 		}
 	}
 
