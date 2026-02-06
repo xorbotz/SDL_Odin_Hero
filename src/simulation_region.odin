@@ -142,6 +142,7 @@ sim_entitiy :: struct {
 	height:       f32,
 	targetIndex:  u32,
 	targetTemp:   ^sim_entitiy,
+	distanceLimit: f32,
 }
 AddEntity_Bare :: proc(SimRegion: ^sim_region) -> (^sim_entitiy, int) {
 	Entity: ^sim_entitiy
@@ -279,9 +280,17 @@ MoveEntity :: proc(
 	r: Vector2 = {0, 0}
 	if .COLLIDES in Entity.attributes && .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
+		distanceLimit :f32= 10000
+		if Entity.distanceLimit == 0{
+			distanceLimit = Entity.distanceLimit
+		}
 		distanceRem := distanceLimit
 		for i in 0 ..< 4 {
 			PlayerDeltaLength := V2Length(PlayerDelta)
+			//TODO Should this have an epsilon?
+			if PlayerDeltaLength <=0{
+				break
+			}
 			if PlayerDeltaLength > distanceRem {
 				tLowest = distanceRem / PlayerDeltaLength
 			}
@@ -389,6 +398,7 @@ MoveEntity :: proc(
 				tEpsilon: f32 = 1
 
 				Entity.Pos += tEpsilon * tLowest * PlayerDelta
+				distanceRem -= tLowest*PlayerDeltaLength
 				Entity.dP = Entity.dP - 1 * dot(Entity.dP, r) * r
 				PlayerDelta = PlayerDelta - 1 * dot(PlayerDelta, r) * r
 				PlayerDelta *= (1 - tLowest)
@@ -397,6 +407,9 @@ MoveEntity :: proc(
 				Entity.Pos += 1.0 * tLowest * PlayerDelta
 				break
 			}
+		}
+		if Entity.distanceLimit != 0{
+			Entity.distanceLimit = distanceRem
 		}
 
 

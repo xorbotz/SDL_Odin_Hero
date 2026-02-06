@@ -1460,7 +1460,8 @@ game_GameUpdateAndRender :: proc(
 
 			}
 
-			MoveEntity(SimRegion, &ent, dt, ddP, MoveSpec)
+
+			MoveEntity(SimRegion, &ent, dt, ddP, MoveSpec, distanceLimit)
 
 		}
 	}
