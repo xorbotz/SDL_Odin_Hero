@@ -263,6 +263,7 @@ MoveEntity :: proc(
 	dt: f32,
 	ddP: Vector2,
 	moveSpec: move_spec,
+	distanceLimit: f32,
 ) {
 	//TODO Don't move apron entities just collisons
 	assert(.NONSPATIAL not_in Entity.attributes, "Trying to move non-spatial entity")
@@ -278,10 +279,14 @@ MoveEntity :: proc(
 	r: Vector2 = {0, 0}
 	if .COLLIDES in Entity.attributes && .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
+		distanceRem := distanceLimit
 		for i in 0 ..< 4 {
-			if tLowest == 0 {
-				break
+			PlayerDeltaLength := V2Length(PlayerDelta)
+			if PlayerDeltaLength > distanceRem {
+				tLowest = distanceRem / PlayerDeltaLength
 			}
+			tLowest = 1
+
 			for TestEntity, index in SimRegion.Entities {
 				if u32(index) == SimRegion.Entity_Count {
 					break
@@ -392,7 +397,6 @@ MoveEntity :: proc(
 				Entity.Pos += 1.0 * tLowest * PlayerDelta
 				break
 			}
-			tLowest = 1
 		}
 
 

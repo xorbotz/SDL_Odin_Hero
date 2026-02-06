@@ -170,11 +170,6 @@ Min :: proc(a, b: $T) -> T {
 	}
 	return b
 }
-Vector2 :: [2]f32
-dot :: proc(a: Vector2, b: Vector2) -> f32 {
-	//	fmt.println("ax bx ay, by: ", a.x, b.x, a.y, b.y)
-	return a.x * b.x + a.y * b.y
-}
 
 
 bmp :: struct {
