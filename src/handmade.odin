@@ -1356,6 +1356,7 @@ game_GameUpdateAndRender :: proc(
 		if ent.Updateable || true {
 			dt := Input.dtForFrame
 			MoveSpec: move_spec = {0, 0}
+			distanceLimit: f32 = 0
 			ddP: Vector2
 			#partial switch ent.type {
 
