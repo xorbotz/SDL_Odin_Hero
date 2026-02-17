@@ -303,23 +303,25 @@ addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: 
 
 
 }
-when (TURNOFF) {
-	addMonster :: proc(GameState: ^game_state, AbsTileX, AbsTileY, AbsTileZ: u32) -> u32 {
-		EI := addEntity(GameState)
-		GameState.low_entities[EI].Stored.position.AbsTileX = AbsTileX
-		GameState.low_entities[EI].Stored.position.AbsTileY = AbsTileY
-		GameState.low_entities[EI].Stored.position.AbsTileZ = AbsTileZ
-		GameState.low_entities[EI].chunk_position = To_Chunk_Pos(
-			&GameState.low_entities[EI].Stored.position,
-			GameState.world,
-		)
-		GameState.low_entities[EI].Stored.height = .5
-		GameState.low_entities[EI].Stored.width = 1.0
-		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
-		return EI
+addMonster :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
+	EI := addEntity(GameState)
+	GameState.low_entities[EI].chunk_position.ChunkX = i32(ChunkX)
+	GameState.low_entities[EI].chunk_position.ChunkY = i32(ChunkY)
+	GameState.low_entities[EI].chunk_position.ChunkZ = i32(ChunkZ)
 
-
+	GameState.low_entities[EI].chunk_position.Offset = {
+		f32(Xshift) * GameState.world.TileSideM,
+		f32(Yshift) * GameState.world.TileSideM,
 	}
+	GameState.low_entities[EI].Stored.type = .MONSTER
+	ChangeEntityLocation(
+		GameState,
+		GameState.world,
+		EI,
+		nil,
+		&GameState.low_entities[EI].chunk_position,
+	)
+	return EI
 }
 addEntity :: proc(GameState: ^game_state) -> u32 {
 	assert(GameState.entityCount < len(GameState.low_entities) - 1)
@@ -377,7 +379,7 @@ Get_Chunk :: #force_inline proc(
 				for j := 0; j < 32; j += 1 {
 					if i == 0 && j != 10 && j != 11 && j != 12 {
 						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
-					}; if i == 31 && j != 10 && j != 11 && j != 12 {
+					};if i == 31 && j != 10 && j != 11 && j != 12 {
 
 						addWall(GameState, ChunkX, ChunkY, ChunkZ, u32(j), u32(i))
 					}
@@ -512,7 +514,9 @@ game_state :: struct {
 	backGroundData:                []u8,
 	backGroundBmap:                ^bmp,
 	playerBmap:                    ^bmp,
+	monsterBmap:                   ^bmp,
 	playerData:                    []u8,
+	monsterData:                   []u8,
 	count:                         u64,
 	Speed:                         uint,
 	dPlayer:                       Vector2, //TODO MOVE TO hf_entity
@@ -609,12 +613,12 @@ DrawRect :: proc(
 
 	if minX < 0 {
 		minX = 0
-	}; if minY < 0 {
+	};if minY < 0 {
 		//maxY = maxY + minY
 		minY = 0
-	}; if maxX > Buffer.Width {
+	};if maxX > Buffer.Width {
 		maxX = Buffer.Width
-	}; if maxY > Buffer.Height {
+	};if maxY > Buffer.Height {
 		maxY = Buffer.Height
 	}
 
@@ -1253,18 +1257,14 @@ game_GameUpdateAndRender :: proc(
 		}
 		temp := sdl.CreateTextureFromSurface(renderer, surface)
 		file_name2 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
+		file_name3 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/monster.bmp"
 		GameState.bg_texture = temp
 		fmt.println("renderer", renderer^)
 		fmt.println("TempTexture:", temp)
 		fmt.println("GSBG TEMP", GameState.bg_texture)
 
-		GameState.playerData, GameState.playerBmap = loadBMP(file_name2)
-		fmt.println(
-			"bgdata size: ",
-			len(GameState.backGroundData),
-			"pdSize: ",
-			len(GameState.playerData),
-		)
+		GameState.playerData, GameState.playerBmap = loadBMP(file_name3)
+		GameState.monsterData, GameState.monsterBmap = loadBMP(file_name3)
 		GameState.Max_Sim_Ent = 4096
 
 		sim_buffer := make([]byte, GameState.Max_Sim_Ent * size_of(sim_entitiy) + 1024)
@@ -1391,9 +1391,6 @@ game_GameUpdateAndRender :: proc(
 						break
 					}
 				}
-				//fmt.println("ddp: ", ddP.x, ddP.y)
-
-				//MoveEntity(SimRegion, &ent, dt, ddP, {60.0, -10.0})
 				MoveSpec = {60.0, -10.0}
 
 				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
@@ -1457,6 +1454,36 @@ game_GameUpdateAndRender :: proc(
 				minY := maxY - ent.height * GameState.world.MetersToPixels
 
 				DrawRect(Buffer, minX, minY, maxX, maxY, colorR, 0.0, colorR)
+			case .MONSTER:
+				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
+				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
+				PlayerT := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+				PlayerT += .5 * ent.height * GameState.world.MetersToPixels
+				DrawRect(
+					Buffer,
+					PlayerL,
+					PlayerT - ent.height * GameState.world.MetersToPixels, //(PlayerH + (1 - PlayerH)) * GameState.world.MetersToPixels,
+					PlayerL + PlayerW * GameState.world.MetersToPixels,
+					PlayerT,
+					PlayerR,
+					PlayerG,
+					PlayerB,
+				)
+				BMPT := PlayerT - 80 // ent.height * GameState.world.MetersToPixels
+				x: i32 = 64
+				RenderBmp(
+					GameState.playerBmap,
+					GameState.playerData,
+					Buffer,
+					GameState.world,
+					i32(math.round_f32(PlayerL)),
+					i32(math.round_f32(BMPT)),
+					i32(math.round_f32(PlayerW * GameState.world.MetersToPixels) + 20),
+					i32(math.round_f32(GameState.world.MetersToPixels)) + 60,
+					x,
+					31,
+					int(GameState.Player_low_index),
+				)
 
 
 			}
