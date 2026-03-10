@@ -120,6 +120,15 @@ BeginSim :: proc(
 
 	return cSR
 }
+entity_type :: enum {
+	NULL,
+	HERO,
+	WALL,
+	MONSTER,
+	FAMILIAR,
+	PROJECTILE,
+}
+collides_mask :: bit_set[entity_type;u32]
 sim_entity_flag :: enum {
 	COLLIDES,
 	NONSPATIAL,
@@ -127,22 +136,25 @@ sim_entity_flag :: enum {
 sim_entity_flags :: bit_set[sim_entity_flag;u32]
 
 sim_entitiy :: struct {
-	StorageIndex: u32,
-	Updateable:   bool,
-	attributes:   sim_entity_flags,
-	Pos:          Vector2,
-	dir:          u32,
-	moving:       bool,
-	z:            f32,
-	dZ:           f32,
-	type:         entity_type,
-	dP:           Vector2,
-	HitPointMax:  i32,
-	width:        f32,
-	height:       f32,
-	targetIndex:  u32,
-	targetTemp:   ^sim_entitiy,
-	distanceLimit: f32,
+	StorageIndex:     u32,
+	Updateable:       bool,
+	attributes:       sim_entity_flags,
+	collides:         collides_mask,
+	Pos:              Vector2,
+	dir:              u32,
+	moving:           bool,
+	z:                f32,
+	dZ:               f32,
+	type:             entity_type,
+	dP:               Vector2,
+	HitPointMax:      i32,
+	width:            f32,
+	height:           f32,
+	targetIndex:      u32,
+	targetTemp:       ^sim_entitiy,
+	distanceLimit:    f32,
+	prev_collisions:  [4]u32,
+	handle_collision: proc(A, B: ^sim_entitiy),
 }
 AddEntity_Bare :: proc(SimRegion: ^sim_region) -> (^sim_entitiy, int) {
 	Entity: ^sim_entitiy
@@ -278,17 +290,18 @@ MoveEntity :: proc(
 	P1 := Entity.Pos //GameState.Player_Position
 	tLowest: f32 = 1
 	r: Vector2 = {0, 0}
-	if .COLLIDES in Entity.attributes && .NONSPATIAL not_in Entity.attributes {
+	if .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
-		distanceLimit :f32= 10000
-		if Entity.distanceLimit == 0{
+		distanceLimit: f32 = 10000
+		if Entity.distanceLimit == 0 {
 			distanceLimit = Entity.distanceLimit
 		}
 		distanceRem := distanceLimit
+		HitEntity: ^sim_entitiy
 		for i in 0 ..< 4 {
 			PlayerDeltaLength := V2Length(PlayerDelta)
 			//TODO Should this have an epsilon?
-			if PlayerDeltaLength <=0{
+			if PlayerDeltaLength <= 0 {
 				break
 			}
 			if PlayerDeltaLength > distanceRem {
@@ -296,14 +309,16 @@ MoveEntity :: proc(
 			}
 			tLowest = 1
 
-			for TestEntity, index in SimRegion.Entities {
+			for &TestEntity, index in SimRegion.Entities {
 				if u32(index) == SimRegion.Entity_Count {
 					break
 				}
 				if TestEntity.StorageIndex == Entity.StorageIndex {
 					continue
 				}
-				if .COLLIDES in TestEntity.attributes && .NONSPATIAL not_in TestEntity.attributes {
+				if .NONSPATIAL not_in TestEntity.attributes &&
+				   Entity.type in TestEntity.collides &&
+				   TestEntity.type in Entity.collides {
 
 					Diam: Vector2
 					Diam.x = TestEntity.width + Entity.width
@@ -331,6 +346,7 @@ MoveEntity :: proc(
 							r.x = 1
 							r.y = 0
 							fmt.println("Min X")
+							HitEntity = &TestEntity
 						}
 
 					}
@@ -350,6 +366,8 @@ MoveEntity :: proc(
 							r.y = 0
 
 							fmt.println("Max X")
+
+							HitEntity = &TestEntity
 						}
 					}
 
@@ -368,6 +386,7 @@ MoveEntity :: proc(
 							r.y = 1
 							r.x = 0
 							fmt.println("Min Y")
+							HitEntity = &TestEntity
 						}
 					}
 
@@ -386,6 +405,7 @@ MoveEntity :: proc(
 							r.y = -1
 							r.x = 0
 							fmt.println("Max Y")
+							HitEntity = &TestEntity
 						}
 					}
 
@@ -398,17 +418,26 @@ MoveEntity :: proc(
 				tEpsilon: f32 = 1
 
 				Entity.Pos += tEpsilon * tLowest * PlayerDelta
-				distanceRem -= tLowest*PlayerDeltaLength
+				distanceRem -= tLowest * PlayerDeltaLength
 				Entity.dP = Entity.dP - 1 * dot(Entity.dP, r) * r
 				PlayerDelta = PlayerDelta - 1 * dot(PlayerDelta, r) * r
 				PlayerDelta *= (1 - tLowest)
+
+				A: ^sim_entitiy = Entity
+				B: ^sim_entitiy = HitEntity
+				if A.type > B.type {
+					temp := A
+					A = B
+					B = temp
+				}
+				HandleCollision(A, B)
 
 			} else {
 				Entity.Pos += 1.0 * tLowest * PlayerDelta
 				break
 			}
 		}
-		if Entity.distanceLimit != 0{
+		if Entity.distanceLimit != 0 {
 			Entity.distanceLimit = distanceRem
 		}
 
@@ -429,5 +458,10 @@ MoveEntity :: proc(
 	} else {
 
 		Entity.Pos += .9 * PlayerDelta
+	}
+}
+HandleCollision :: proc(A, B: ^sim_entitiy) {
+	if A.type == .HERO && B.type == .MONSTER {
+		//A.dP = 10
 	}
 }

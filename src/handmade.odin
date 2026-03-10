@@ -204,14 +204,7 @@ entity_res :: enum {
 	DORMANT,
 }
 
-entity_type :: enum {
-	NULL,
-	HERO,
-	WALL,
-	MONSTER,
-	FAMILIAR,
-	PROJECTILE,
-}
+
 direction :: enum {
 	UP,
 	DOWN,
@@ -264,6 +257,7 @@ addMonster :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshif
 	GameState.low_entities[EI].Stored.height = 2
 	GameState.low_entities[EI].Stored.width = 1
 	GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+	GameState.low_entities[EI].Stored.collides = {.HERO, .WALL, .MONSTER, .PROJECTILE}
 	GameState.low_entities[EI].Stored.type = .MONSTER
 	ChangeEntityLocation(
 		GameState,
@@ -314,6 +308,7 @@ addWall :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: 
 	GameState.low_entities[EI].Stored.height = GameState.world.TileSideM
 	GameState.low_entities[EI].Stored.width = GameState.low_entities[EI].Stored.height
 	GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+	GameState.low_entities[EI].Stored.collides = {.HERO, .WALL, .MONSTER, .PROJECTILE}
 	GameState.low_entities[EI].Stored.type = .WALL
 	ChangeEntityLocation(
 		GameState,
@@ -1234,6 +1229,7 @@ game_GameUpdateAndRender :: proc(
 		GameState.low_entities[EI].Stored.width = .75 * GameState.world.TileSideM
 		GameState.low_entities[EI].Stored.height = .33 * GameState.world.TileSideM
 		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+		GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER, .PROJECTILE}
 		ChangeEntityLocation(
 			GameState,
 			GameState.world,
@@ -1263,14 +1259,14 @@ game_GameUpdateAndRender :: proc(
 
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
 		//GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
-		file_name: cstring = "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+		file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
 		surface := sdl.LoadBMP(file_name)
 		if surface == nil {
 			fmt.println("DIDNT LOAD TEXTURE")
 		}
 		temp := sdl.CreateTextureFromSurface(renderer, surface)
-		file_name2 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
-		file_name3 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/monster.bmp"
+		file_name2 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
+		file_name3 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/monster.bmp"
 		GameState.bg_texture = temp
 		fmt.println("renderer", renderer^)
 		fmt.println("TempTexture:", temp)
