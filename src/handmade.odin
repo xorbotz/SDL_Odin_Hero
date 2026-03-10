@@ -129,7 +129,6 @@ TestWall :: proc(
 			if (false || (Y > minFixed && Y < maxFixed)) {
 
 				tMin^ = max(0, tResult - .001)
-				fmt.println("Updating Tmin: ", Wall, RelTarget, PlayerDeltTarget, tMin^)
 
 				return true
 			}
@@ -1230,6 +1229,7 @@ game_GameUpdateAndRender :: proc(
 		GameState.low_entities[EI].Stored.height = .33 * GameState.world.TileSideM
 		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
 		GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER, .PROJECTILE}
+		GameState.low_entities[EI].Stored.handle_collision = HandleCollision
 		ChangeEntityLocation(
 			GameState,
 			GameState.world,

@@ -293,7 +293,7 @@ MoveEntity :: proc(
 	if .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
 		distanceLimit: f32 = 10000
-		if Entity.distanceLimit == 0 {
+		if Entity.distanceLimit >= 0 {
 			distanceLimit = Entity.distanceLimit
 		}
 		distanceRem := distanceLimit
@@ -430,14 +430,16 @@ MoveEntity :: proc(
 					A = B
 					B = temp
 				}
-				HandleCollision(A, B)
+				if (A.handle_collision != nil) {
+					A.handle_collision(A, B)
+				}
 
 			} else {
 				Entity.Pos += 1.0 * tLowest * PlayerDelta
 				break
 			}
 		}
-		if Entity.distanceLimit != 0 {
+		if Entity.distanceLimit >= 0 {
 			Entity.distanceLimit = distanceRem
 		}
 
@@ -461,7 +463,7 @@ MoveEntity :: proc(
 	}
 }
 HandleCollision :: proc(A, B: ^sim_entitiy) {
-	if A.type == .HERO && B.type == .MONSTER {
-		//A.dP = 10
-	}
+	if B.type == .MONSTER {
+		A.dP = 10}
+
 }
