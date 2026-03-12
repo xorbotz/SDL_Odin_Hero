@@ -96,7 +96,7 @@ ChangeEntityLocation :: #force_inline proc(
 			Block.Entity_Index[Block.Entity_Count] = LowEntityIndex
 			Block.Entity_Count += 1
 
-			GameState.low_entities[LowEntityIndex].Stored.attributes -= {.NONSPATIAL}
+			//GameState.low_entities[LowEntityIndex].Stored.attributes -= {.NONSPATIAL}
 			GameState.low_entities[LowEntityIndex].chunk_position = NewP^
 		} else {
 
@@ -244,7 +244,7 @@ getEntity :: proc(GameState: ^game_state, index: u32) -> entity {
 	return e
 }
 updateProjectile :: proc(GameState: ^game_state, sourceIndex: u32) -> u32 {
-	FollowingE := GameState.low_entities[sourceIndex]
+	FollowingE := &GameState.low_entities[sourceIndex]
 
 	EI: u32
 	create := true
@@ -262,7 +262,8 @@ updateProjectile :: proc(GameState: ^game_state, sourceIndex: u32) -> u32 {
 
 	}
 	fmt.println(projCount, "Proj Count")
-	if create && projCount <= 3 {
+	if projCount<=3{
+	if create {
 
 		EI = addEntity(GameState)
 		FollowingE.Stored.projectiles[projCount] = EI
@@ -289,6 +290,8 @@ updateProjectile :: proc(GameState: ^game_state, sourceIndex: u32) -> u32 {
 		&GameState.low_entities[EI].chunk_position,
 	)
 	return EI
+ }
+	return 4097
 }
 addMonster :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
 	EI := addEntity(GameState)

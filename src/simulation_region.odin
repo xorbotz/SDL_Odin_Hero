@@ -209,10 +209,16 @@ EndSim :: proc(SimAlloc: ^mem.Allocator, region: ^sim_region, game_s: ^game_stat
 			break
 
 		}
+		if curEntity.type == .PROJECTILE && .NONSPATIAL in curEntity.attributes {
+			fmt.println("handling proj")
+		}
 		storedEnt := &game_s.low_entities[curEntity.StorageIndex]
+
+
 		//TODO CHECK IF THIS ACTUALLY WORKS
 		curEntity.Pos -= .5 * {curEntity.width, curEntity.height}
 		storedEnt.Stored = curEntity
+
 		NewP :=
 			MapIntoChunkSpace(region.world, region.Center, curEntity.Pos) if .NONSPATIAL not_in curEntity.attributes else null_pos()
 		ChangeEntityLocation(
