@@ -243,6 +243,53 @@ getEntity :: proc(GameState: ^game_state, index: u32) -> entity {
 	e.high = &GameState.high_entities[index] //nil
 	return e
 }
+updateProjectile :: proc(GameState: ^game_state, sourceIndex: u32) -> u32 {
+	FollowingE := GameState.low_entities[sourceIndex]
+
+	EI: u32
+	create := true
+	projCount := 0
+	for proj in FollowingE.Stored.projectiles {
+		if proj != 0 {
+			projCount += 1
+			Curr := GameState.low_entities[proj]
+			if .NONSPATIAL in Curr.Stored.attributes {
+				EI = proj
+				create = false
+				break
+			}
+		}
+
+	}
+	fmt.println(projCount, "Proj Count")
+	if create && projCount <= 3 {
+
+		EI = addEntity(GameState)
+		FollowingE.Stored.projectiles[projCount] = EI
+		GameState.low_entities[EI].Stored.height = FollowingE.Stored.height / 2
+		GameState.low_entities[EI].Stored.width = FollowingE.Stored.width / 2
+		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+		GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER}
+		GameState.low_entities[EI].Stored.type = .PROJECTILE
+		GameState.low_entities[EI].Stored.handle_collision = HandleCollisionProjectile
+
+	}
+
+	GameState.low_entities[EI].chunk_position.ChunkX = FollowingE.chunk_position.ChunkX
+	GameState.low_entities[EI].chunk_position.ChunkY = FollowingE.chunk_position.ChunkY
+	GameState.low_entities[EI].chunk_position.ChunkZ = FollowingE.chunk_position.ChunkZ
+	GameState.low_entities[EI].chunk_position.Offset = FollowingE.chunk_position.Offset
+	GameState.low_entities[EI].Stored.distanceLimit = 3
+	GameState.low_entities[EI].Stored.attributes -= {.NONSPATIAL}
+	ChangeEntityLocation(
+		GameState,
+		GameState.world,
+		EI,
+		nil,
+		&GameState.low_entities[EI].chunk_position,
+	)
+	return EI
+}
 addMonster :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
 	EI := addEntity(GameState)
 	GameState.low_entities[EI].chunk_position.ChunkX = i32(ChunkX)
@@ -930,6 +977,10 @@ HandleInput :: proc(
 
 			}
 
+			if buttons.Action3.EndedDown {
+				updateProjectile(GameState, GameState.Player_low_index)
+				fmt.println("Action3")
+			}
 			when (TURNOFF) {
 				if buttons.Action2.EndedDown {
 					fmt.println("end speed")
@@ -938,9 +989,6 @@ HandleInput :: proc(
 				}
 				//push please
 
-				if buttons.Action3.EndedDown {
-					fmt.println("Action3")
-				}
 
 				if buttons.Action4.EndedDown {
 					fmt.println("Action4")
@@ -1090,7 +1138,6 @@ HandleInput :: proc(
 					) {
 						r.y = -1
 						r.x = 0
-						fmt.println("Max Y")
 					}
 				}
 
@@ -1229,7 +1276,6 @@ game_GameUpdateAndRender :: proc(
 		GameState.low_entities[EI].Stored.height = .33 * GameState.world.TileSideM
 		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
 		GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER, .PROJECTILE}
-		GameState.low_entities[EI].Stored.handle_collision = HandleCollision
 		ChangeEntityLocation(
 			GameState,
 			GameState.world,
@@ -1259,21 +1305,21 @@ game_GameUpdateAndRender :: proc(
 
 		GameState.world.LowerLeftStartY = f32(windowSizey) * GameState.world.TileSidePixels
 		//GameState.backGroundData, GameState.backGroundBmap = loadBMP(file_name)
-		file_name: cstring = "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
+		file_name: cstring = "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/bg.bmp"
 		surface := sdl.LoadBMP(file_name)
 		if surface == nil {
 			fmt.println("DIDNT LOAD TEXTURE")
 		}
 		temp := sdl.CreateTextureFromSurface(renderer, surface)
-		file_name2 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
-		file_name3 := "/home/xorbot/CLionProjects/SDL_Odin_Hero/src/monster.bmp"
+		file_name2 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/Run.bmp"
+		file_name3 := "/home/mrcoyne/CLionProjects/SDL_Odin_Hero/src/monster.bmp"
 		GameState.bg_texture = temp
 		fmt.println("renderer", renderer^)
 		fmt.println("TempTexture:", temp)
 		fmt.println("GSBG TEMP", GameState.bg_texture)
 
 		GameState.playerData, GameState.playerBmap = loadBMP(file_name2)
-		GameState.monsterData, GameState.monsterBmap = loadBMP(file_name3)
+		//GameState.monsterData, GameState.monsterBmap = loadBMP(file_name3)
 		fmt.println(
 			"bgdata size: ",
 			len(GameState.backGroundData),
@@ -1472,6 +1518,27 @@ game_GameUpdateAndRender :: proc(
 				minY := maxY - ent.height * GameState.world.MetersToPixels
 
 				DrawRect(Buffer, minX, minY, maxX, maxY, colorR, 0.0, colorR)
+			case .PROJECTILE:
+				colorR: f32 = 0.75
+
+				ddP.x = .5
+				ddP.y = 0
+				MoveSpec = {10.0, -1}
+
+				//MoveEntity(SimRegion, &ent, dt, ddP, {40.0, -10.0})
+				minX :=
+					GameState.world.LowerLeftStartX +
+					ScreenCenterX +
+					ent.Pos.x * GameState.world.MetersToPixels
+				minX -= .5 * ent.width * GameState.world.MetersToPixels
+				maxX := minX + ent.width * GameState.world.MetersToPixels
+				maxY := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
+				maxY += .5 * ent.height * GameState.world.MetersToPixels
+
+				minY := maxY - ent.height * GameState.world.MetersToPixels
+
+				DrawRect(Buffer, minX, minY, maxX, maxY, colorR, 0.0, 0.0)
+
 
 			case .MONSTER:
 				colorR: f32 = .25
@@ -1492,29 +1559,6 @@ game_GameUpdateAndRender :: proc(
 				minY := maxY - ent.height * GameState.world.MetersToPixels
 
 				DrawRect(Buffer, minX, minY, maxX, maxY, colorR, 0.0, colorR)
-			/*
-				PlayerL := ScreenCenterX + ent.Pos.x * GameState.world.MetersToPixels
-				PlayerL -= .5 * ent.width * GameState.world.MetersToPixels
-				PlayerT := ScreenCenterY - ent.Pos.y * GameState.world.MetersToPixels
-				PlayerT += .5 * ent.height * GameState.world.MetersToPixels
-				x: i32 = 47
-
-				BMPT := PlayerT - 400 // ent.height * GameState.world.MetersToPixels
-
-
-				RenderBmp(
-					GameState.monsterBmap,
-					GameState.monsterData,
-					Buffer,
-					GameState.world,
-					i32(math.round_f32(PlayerL)),
-					i32(math.round_f32(BMPT)),
-					i32(math.round_f32(PlayerW * GameState.world.MetersToPixels) + 400),
-					i32(math.round_f32(GameState.world.MetersToPixels)) + 400,
-					x,
-					31,
-					int(GameState.Player_low_index),
-				)*/
 
 
 			}

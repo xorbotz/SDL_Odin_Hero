@@ -122,11 +122,11 @@ BeginSim :: proc(
 }
 entity_type :: enum {
 	NULL,
+	PROJECTILE,
 	HERO,
 	WALL,
 	MONSTER,
 	FAMILIAR,
-	PROJECTILE,
 }
 collides_mask :: bit_set[entity_type;u32]
 sim_entity_flag :: enum {
@@ -154,6 +154,7 @@ sim_entitiy :: struct {
 	targetTemp:       ^sim_entitiy,
 	distanceLimit:    f32,
 	prev_collisions:  [4]u32,
+	projectiles:      [4]u32,
 	handle_collision: proc(A, B: ^sim_entitiy),
 }
 AddEntity_Bare :: proc(SimRegion: ^sim_region) -> (^sim_entitiy, int) {
@@ -293,7 +294,7 @@ MoveEntity :: proc(
 	if .NONSPATIAL not_in Entity.attributes {
 		//TODO Spacial Partition
 		distanceLimit: f32 = 10000
-		if Entity.distanceLimit >= 0 {
+		if Entity.distanceLimit > 0 {
 			distanceLimit = Entity.distanceLimit
 		}
 		distanceRem := distanceLimit
@@ -345,7 +346,6 @@ MoveEntity :: proc(
 						) {
 							r.x = 1
 							r.y = 0
-							fmt.println("Min X")
 							HitEntity = &TestEntity
 						}
 
@@ -365,7 +365,6 @@ MoveEntity :: proc(
 							r.x = -1
 							r.y = 0
 
-							fmt.println("Max X")
 
 							HitEntity = &TestEntity
 						}
@@ -385,7 +384,6 @@ MoveEntity :: proc(
 						) {
 							r.y = 1
 							r.x = 0
-							fmt.println("Min Y")
 							HitEntity = &TestEntity
 						}
 					}
@@ -404,7 +402,6 @@ MoveEntity :: proc(
 						) {
 							r.y = -1
 							r.x = 0
-							fmt.println("Max Y")
 							HitEntity = &TestEntity
 						}
 					}
@@ -436,11 +433,15 @@ MoveEntity :: proc(
 
 			} else {
 				Entity.Pos += 1.0 * tLowest * PlayerDelta
+				distanceRem -= PlayerDeltaLength
 				break
 			}
 		}
-		if Entity.distanceLimit >= 0 {
+		if Entity.distanceLimit > 0 {
 			Entity.distanceLimit = distanceRem
+		} else if Entity.distanceLimit < 0 {
+			Entity.distanceLimit = 0
+			Entity.attributes += {.NONSPATIAL}
 		}
 
 
@@ -462,8 +463,9 @@ MoveEntity :: proc(
 		Entity.Pos += .9 * PlayerDelta
 	}
 }
-HandleCollision :: proc(A, B: ^sim_entitiy) {
-	if B.type == .MONSTER {
-		A.dP = 10}
+HandleCollisionProjectile :: proc(A, B: ^sim_entitiy) {
+	A.attributes += {.NONSPATIAL}
+	A.distanceLimit = 0
+	fmt.println("HANDLING COLLISION")
 
 }
