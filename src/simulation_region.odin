@@ -199,7 +199,7 @@ GetSimSpaceP :: #force_inline proc(SimRegion: ^sim_region, Stored: ^low_entity) 
 }
 null_pos :: proc() -> world_chunk_position {
 	r: world_chunk_position
-	r.ChunkX = i32(max(u32))
+	r.ChunkX = transmute(i32)max(u32)
 	return r
 }
 

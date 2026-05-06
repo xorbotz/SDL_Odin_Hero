@@ -4,6 +4,8 @@ import "core:encoding/endian"
 import "core:fmt"
 import "core:math"
 import "core:os"
+//import "core:os/os2"
+
 import "core:slice"
 import sdl "vendor:sdl3"
 
@@ -262,35 +264,35 @@ updateProjectile :: proc(GameState: ^game_state, sourceIndex: u32) -> u32 {
 
 	}
 	fmt.println(projCount, "Proj Count")
-	if projCount<=3{
-	if create {
+	if projCount <= 3 {
+		if create {
 
-		EI = addEntity(GameState)
-		FollowingE.Stored.projectiles[projCount] = EI
-		GameState.low_entities[EI].Stored.height = FollowingE.Stored.height / 2
-		GameState.low_entities[EI].Stored.width = FollowingE.Stored.width / 2
-		GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
-		GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER}
-		GameState.low_entities[EI].Stored.type = .PROJECTILE
-		GameState.low_entities[EI].Stored.handle_collision = HandleCollisionProjectile
+			EI = addEntity(GameState)
+			FollowingE.Stored.projectiles[projCount] = EI
+			GameState.low_entities[EI].Stored.height = FollowingE.Stored.height / 2
+			GameState.low_entities[EI].Stored.width = FollowingE.Stored.width / 2
+			GameState.low_entities[EI].Stored.attributes += {.COLLIDES}
+			GameState.low_entities[EI].Stored.collides = {.WALL, .MONSTER}
+			GameState.low_entities[EI].Stored.type = .PROJECTILE
+			GameState.low_entities[EI].Stored.handle_collision = HandleCollisionProjectile
 
+		}
+
+		GameState.low_entities[EI].chunk_position.ChunkX = FollowingE.chunk_position.ChunkX
+		GameState.low_entities[EI].chunk_position.ChunkY = FollowingE.chunk_position.ChunkY
+		GameState.low_entities[EI].chunk_position.ChunkZ = FollowingE.chunk_position.ChunkZ
+		GameState.low_entities[EI].chunk_position.Offset = FollowingE.chunk_position.Offset
+		GameState.low_entities[EI].Stored.distanceLimit = 3
+		GameState.low_entities[EI].Stored.attributes -= {.NONSPATIAL}
+		ChangeEntityLocation(
+			GameState,
+			GameState.world,
+			EI,
+			nil,
+			&GameState.low_entities[EI].chunk_position,
+		)
+		return EI
 	}
-
-	GameState.low_entities[EI].chunk_position.ChunkX = FollowingE.chunk_position.ChunkX
-	GameState.low_entities[EI].chunk_position.ChunkY = FollowingE.chunk_position.ChunkY
-	GameState.low_entities[EI].chunk_position.ChunkZ = FollowingE.chunk_position.ChunkZ
-	GameState.low_entities[EI].chunk_position.Offset = FollowingE.chunk_position.Offset
-	GameState.low_entities[EI].Stored.distanceLimit = 3
-	GameState.low_entities[EI].Stored.attributes -= {.NONSPATIAL}
-	ChangeEntityLocation(
-		GameState,
-		GameState.world,
-		EI,
-		nil,
-		&GameState.low_entities[EI].chunk_position,
-	)
-	return EI
- }
 	return 4097
 }
 addMonster :: proc(GameState: ^game_state, ChunkX, ChunkY, ChunkZ, Xshift, Yshift: u32) -> u32 {
@@ -695,12 +697,12 @@ loadBMP :: proc(filename: string) -> ([]u8, ^bmp) {
 	file_handle, error := os.open(filename)
 	if error == nil {
 		file_size, _ := os.file_size(file_handle)
-		file_data, file_ok := os.read_entire_file_from_filename(
+		file_data, file_ok := os.read_entire_file_from_path(
 			filename,
 			GameMemory.PermanentStorageAlloc,
 		) //os.read_entire_file_from_handle(file_handle)
 
-		if file_ok {
+		if file_ok == nil {
 
 			os.close(file_handle)
 
@@ -1524,9 +1526,9 @@ game_GameUpdateAndRender :: proc(
 			case .PROJECTILE:
 				colorR: f32 = 0.75
 
-				ddP.x = .5
+				ddP.x = 1
 				ddP.y = 0
-				MoveSpec = {10.0, -1}
+				MoveSpec = {60.0, -1}
 
 				//MoveEntity(SimRegion, &ent, dt, ddP, {40.0, -10.0})
 				minX :=
